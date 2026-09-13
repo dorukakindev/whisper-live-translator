@@ -60,3 +60,13 @@ There is no test framework. Validate changes with:
 - **DeepL** translation is optional (`DeepLTranslator`); when the provider is OpenAI the key lives on the responder. `translate(..., force=True)` bypasses the live-transcription translation toggle for user-initiated (PTT) translations.
 - `buyedektir.py` uses **LF line endings** — preserve them when editing on Windows.
 - Transcripts append to `transcriptions.txt` (auto-rotates at 5 MB); speaker profiles persist as `speaker_profiles.json` (JSON, not pickle — avoids deserialization risk).
+
+## Devir notu ve yayınlama
+
+- Bu projedeki her çalışma için `docs/devir/YYYY-MM-DD-HHMM.md` oluştur (Europe/Istanbul). Aynı dakika için dosya varsa üzerine yazma; benzersiz bir sonraki dakika adı kullan.
+- Önceki devir notlarını koru. Kökteki `DEVIR-NOTU.md` güncel nota bağlantı veren bir indeks olsun; önceki bağlantıları da koru.
+- Notta repo, dal, başlangıç ve bitiş **kod** commit kimlikleri; değişen dosyalar ve amaçları; hata/kök neden/kanıt; özelliklerin kullanımı; test komutları ve sonuçları; çalıştırılmayan kontroller; bağımlılık, kurulum, ayar/şema değişiklikleri; bilinen sorunlar, yarım işler ve sonraki adımlar yer alsın.
+- Commit/push yapılmamış değişiklikleri açıkça belirt. API anahtarı, token değeri, şifre, kişisel veri ve ham özel kayıtları notlara koyma. Kanıtlanmamış işleri tamamlandı sayma.
+- Kod değişikliklerini önce commit ederek bitiş kod kimliğini kesinleştir; devir notunu, indeksi ve gerekli yönergeleri ayrı bir belge commit'ine al. Böylece notun kendi commit kimliğini içine yazma döngüsü oluşmaz.
+- Kullanıcının bu proje için talebi doğrultusunda notları ilgili GitHub deposunun kök indeksiyle birlikte commit et ve push et. Uzak dal ile yerel HEAD kimliğini doğrula; push başarılı olmadan “GitHub'a yüklendi” deme. Push engellenirse gerçek hatayı ve gönderilmemiş commitleri belirt; force push yapma.
+- Son yanıtta repo bağlantısını, tarihli notun doğrudan GitHub bağlantısını ve push edilen son commit kimliğini ver.
