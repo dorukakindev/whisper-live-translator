@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whisper Pro — Overlay</title>
+    <link rel="stylesheet" href="/static/whisper-pro-theme.css">
+    <script src="/static/socket.io.min.js"></script>
+    <script src="/static/runtime-safety.js"></script>
+    <script src="/static/html-utils.js"></script>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg-main: rgba(9, 11, 14, 0.95);
+            --bg-card: rgba(21, 27, 34, 0.96);
+            --bg-raised: #1c242c;
+            --text-main: #edf1f3;
+            --text-secondary: #a1adb7;
+            --text-muted: #687681;
+            --primary: #d5a35c;
+            --primary-hover: #efbd73;
+            --translation: #8fc5c2;
+            --success: #69b58b;
+            --warning: #d2a064;
+            --border-color: #27313b;
+            --border-strong: #3a4652;
+        }
+
+        body.light-mode {
+            --bg-main: rgba(223, 227, 228, 0.97);
+            --bg-card: var(--wp-surface);
+            --bg-raised: var(--wp-raised);
+            --text-main: var(--wp-text);
+            --text-secondary: var(--wp-text-secondary);
+            --text-muted: var(--wp-text-muted);
+            --primary: var(--wp-accent);
+            --primary-hover: var(--wp-accent-hover);
+            --translation: var(--wp-translation);
+            --success: var(--wp-success);
+            --warning: var(--wp-warning);
+            --border-color: var(--wp-border);
+            --border-strong: var(--wp-border-strong);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            overflow: hidden;
+        }
+
+        body {
+            position: relative;
+            font-family: "Segoe UI Variable Text", "Segoe UI", Arial, sans-serif;
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            border-radius: 12px;
+            background: var(--bg-main);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.34);
+        }
+
+        body::before {
+            content: "";
+            position: absolute;
+            z-index: 2;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 3px;
+            background: var(--primary);
+        }
+
+        /* Pencerenin cerçevesi yok (frame:false); bu şerit taşımayı sağlar. */
+        #dragHeader {
+            -webkit-app-region: drag;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 38px;
+            padding: 7px 10px 7px 13px;
+            font-family: "Cascadia Mono", Consolas, monospace;
+            font-size: 9px;
+            font-weight: 650;
+            letter-spacing: 0.11em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+        }
+
+        #dragHeader .status-dot {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            margin-right: 6px;
+        }
+
+        #dragHeader .status-dot.connected {
+            background: var(--success);
+        }
+
+        #dragHeader button {
+            -webkit-app-region: no-drag;
+            width: 28px;
+            height: 28px;
+            display: inline-grid;
+            place-items: center;
+            padding: 0;
+            color: var(--text-muted);
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 7px;
+            cursor: pointer;
+        }
+
+        #dragHeader button:hover {
+            color: var(--text-main);
+            background: var(--bg-raised);
+            border-color: var(--border-strong);
+        }
+
+        #dragHeader button:focus-visible,
+        #aiBtn:focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: 2px;
+        }
+
+        #dragHeader button svg {
+            width: 15px;
+            height: 15px;
+            fill: none;
+            stroke: currentColor;
+            stroke-linecap: round;
+            stroke-width: 1.8;
+        }
+
+        #body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 12px 14px 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .transcript-text {
+            font-size: 15px;
+            line-height: 1.52;
+            color: var(--text-main);
+            word-break: break-word;
+        }
+
+        .translation-text {
+            font-size: 13px;
+            line-height: 1.4;
+            padding: 8px 10px;
+            color: var(--translation);
+            background: rgba(143, 197, 194, 0.055);
+            border-left: 2px solid var(--translation);
+            border-radius: 0 7px 7px 0;
+            word-break: break-word;
+        }
+
+        .okunus-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 9px;
+            padding: 11px;
+        }
+
+        .okunus-label {
+            font-size: 9px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+
+        .okunus-text {
+            font-size: 18px;
+            line-height: 1.6;
+            font-weight: 600;
+            color: var(--primary-hover);
+            word-break: break-word;
+        }
+
+        .reply-text {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        #aiBtn {
+            -webkit-app-region: no-drag;
+            align-self: flex-start;
+            min-height: 36px;
+            background: var(--primary);
+            color: #1b160f;
+            border: 1px solid var(--primary);
+            border-radius: 9px;
+            padding: 7px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        #aiBtn:disabled {
+            opacity: 0.45;
+            cursor: default;
+        }
+
+        #aiBtn:hover:not(:disabled) {
+            background: var(--primary-hover);
+            border-color: var(--primary-hover);
+        }
+
+        .empty-hint {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-strong);
+            border-radius: 3px;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="dragHeader">
+        <span><span class="status-dot" id="statusDot"></span>Whisper Pro / Live</span>
+        <button id="closeBtn" title="Kapat" aria-label="Overlay penceresini kapat">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg>
+        </button>
+    </div>
+    <div id="body">
+        <div class="empty-hint" id="emptyHint">Konuşma bekleniyor…</div>
+    </div>
+
+    <script>
+        // Bu overlay ANA PENCEREDEN BAĞIMSIZ bir Electron BrowserWindow'da çalışır
+        // ama AYNI backend'e (aynı origin, aynı port) bağlanır — index.html'in
+        // devasa JS'ini KASITLI OLARAK tekrar etmez; yalnız son transkript +
+        // çeviri + AI okunuş önerisini gösteren minimal, salt-okunura yakın bir
+        // görünümdür. Tam ayarlar/favoriler/geçmiş için ana pencere gerekir.
+        const APP_TOKEN = {{ app_token|tojson }};
+        const nativeFetch = window.fetch.bind(window);
+        window.fetch = (input, init = {}) => {
+            const headers = new Headers(init.headers || {});
+            headers.set('X-Whisper-Token', APP_TOKEN);
+            return nativeFetch(input, { ...init, headers });
+        };
+
+        function applyStoredTheme() {
+            document.body.classList.toggle(
+                'light-mode', whisperStorage.getItem('theme') === 'light'
+            );
+        }
+        applyStoredTheme();
+        window.addEventListener('storage', event => {
+            if (event.key === 'theme') applyStoredTheme();
+        });
+        let socket = null;
+        try { socket = io(); } catch (e) { console.error('Socket.IO bağlantı hatası:', e); }
+
+        let lastTranscriptId = null;
+        let lastTranscriptText = '';
+        let backendInstanceId = null;
+        let overlayHydrationGeneration = 0;
+
+        function setConnected(connected) {
+            const dot = document.getElementById('statusDot');
+            if (dot) dot.classList.toggle('connected', connected);
+        }
+
+        function renderBody(html) {
+            const body = document.getElementById('body');
+            if (body) body.innerHTML = html;
+        }
+
+        function clearTranscript() {
+            lastTranscriptId = null;
+            lastTranscriptText = '';
+            renderBody('<div class="empty-hint" id="emptyHint">Konuşma bekleniyor…</div>');
+        }
+
+        function updateTranslation(translation) {
+            if (!translation) return;
+            const el = document.querySelector('#body .translation-text');
+            if (el) {
+                el.textContent = translation;
+                return;
+            }
+            const transcriptEl = document.querySelector('#body .transcript-text');
+            if (transcriptEl) {
+                transcriptEl.insertAdjacentHTML(
+                    'afterend',
+                    `<div class="translation-text">${escapeHtml(translation)}</div>`
+                );
+            }
+        }
+
+        function renderTranscript(data) {
+            if (data.instance_id && backendInstanceId
+                    && data.instance_id !== backendInstanceId) {
+                clearTranscript();
+            }
+            if (data.instance_id) backendInstanceId = data.instance_id;
+            if (lastTranscriptId !== null && Number(data.id) < Number(lastTranscriptId)) return;
+            if (lastTranscriptId !== null && Number(data.id) === Number(lastTranscriptId)) {
+                updateTranslation(data.translation);
+                return;
+            }
+            document.getElementById('emptyHint')?.remove();
+            lastTranscriptId = data.id;
+            lastTranscriptText = data.text || '';
+            const translationHtml = data.translation
+                ? `<div class="translation-text">${escapeHtml(data.translation)}</div>`
+                : '';
+            renderBody(`
+                <div class="transcript-text">${escapeHtml(lastTranscriptText)}</div>
+                ${translationHtml}
+                <button id="aiBtn" onclick="requestAnswer()">Cevap Önerisi</button>
+                <div id="answerArea"></div>
+            `);
+        }
+
+        function requestAnswer() {
+            if (!lastTranscriptId || !lastTranscriptText) return;
+            const requestTranscriptId = lastTranscriptId;
+            const requestTranscriptText = lastTranscriptText;
+            const requestInstanceId = backendInstanceId;
+            const btn = document.getElementById('aiBtn');
+            if (btn) { btn.disabled = true; btn.textContent = 'Yükleniyor…'; }
+            fetch('/api/generate_ai_response', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    text: requestTranscriptText, mode: 'answer',
+                    target_lang: whisperStorage.getItem('aiTargetLang') || 'auto',
+                    tone: whisperStorage.getItem('aiResponseTone') || 'arkadasca',
+                    request_id: `overlay-${requestInstanceId || 'local'}-${requestTranscriptId}`,
+                    transcript_id: requestTranscriptId,
+                })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    // Istek A icin beklerken transkript B geldiyse A'nin cevabini
+                    // yeni kartin altina yazma. Eski buton zaten DOM'dan cikmistir.
+                    if (requestTranscriptId !== lastTranscriptId
+                            || requestInstanceId !== backendInstanceId) return;
+                    if (btn) { btn.disabled = false; btn.textContent = 'Cevap Önerisi'; }
+                    const area = document.getElementById('answerArea');
+                    if (!area) return;
+                    if (!data.success || !Array.isArray(data.options) || !data.options.length) {
+                        area.innerHTML = `<div class="empty-hint">${escapeHtml(data.error || 'Öneri alınamadı')}</div>`;
+                        return;
+                    }
+                    area.innerHTML = data.options.map(opt => {
+                        const reply = opt.translation || opt.turkish || '';
+                        const okunus = opt.romanized || '';
+                        return `
+                            <div class="okunus-box" style="margin-top:6px;">
+                                <div class="okunus-label">${escapeHtml(reply)}</div>
+                                ${okunus ? `<div class="okunus-text">${escapeHtml(okunus)}</div>` : ''}
+                                ${opt.turkish ? `<div class="reply-text">${escapeHtml(opt.turkish)}</div>` : ''}
+                            </div>`;
+                    }).join('');
+                })
+                .catch(err => {
+                    console.error('overlay answer hatası:', err);
+                    if (requestTranscriptId !== lastTranscriptId
+                            || requestInstanceId !== backendInstanceId) return;
+                    if (btn) { btn.disabled = false; btn.textContent = 'Cevap Önerisi'; }
+                });
+        }
+
+        async function hydrateLatestTranscript() {
+            const generation = ++overlayHydrationGeneration;
+            const idAtStart = lastTranscriptId;
+            try {
+                const response = await fetch('/api/transcriptions');
+                if (!response.ok) return;
+                const payload = await response.json();
+                if (generation !== overlayHydrationGeneration) return;
+                if (payload.instance_id && backendInstanceId
+                        && payload.instance_id !== backendInstanceId) {
+                    clearTranscript();
+                }
+                if (payload.instance_id) backendInstanceId = payload.instance_id;
+                const records = Array.isArray(payload.transcriptions)
+                    ? payload.transcriptions.filter(item => item && !['mic', 'ptt'].includes(item.source))
+                    : [];
+                if (records.length) renderTranscript(records[records.length - 1]);
+                else if (lastTranscriptId === idAtStart) clearTranscript();
+            } catch (error) {
+                console.error('Overlay transkript geri yükleme hatası:', error);
+            }
+        }
+
+        if (socket) {
+            socket.on('connect', () => {
+                setConnected(true);
+                hydrateLatestTranscript();
+            });
+            socket.on('disconnect', () => setConnected(false));
+            socket.on('new_transcription', (data) => {
+                if (data && data.source !== 'mic') renderTranscript(data);
+            });
+            socket.on('transcription_translation', (data) => {
+                if (!data || data.id !== lastTranscriptId) return;
+                updateTranslation(data.translation);
+            });
+        }
+
+        document.getElementById('closeBtn').addEventListener('click', () => {
+            window.close();
+        });
+    </script>
+</body>
+
+</html>

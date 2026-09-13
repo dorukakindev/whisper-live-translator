@@ -1,0 +1,43 @@
+# Gizli bilgiler — ASLA commit'lenmesin
+.env
+token*.txt
+OPENAI.txt
+api.txt
+1 saat.txt
+*.cookies.txt
+archive/cookies.txt
+archive/youtube_cookies.txt
+
+# Loglar ve calisma zamani ciktilari
+*.log
+transcriptions.txt
+transcriptions.txt.*
+
+# Python
+__pycache__/
+archive/__pycache__yedek/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+
+# Konusmaci profilleri (yerel duruma ozgu)
+speaker_profiles.json
+speaker_profiles.pkl
+
+# Buyuk / uretilmis dizinler
+dist/
+node_modules/
+whisper_models/
+
+# Kazara olusmus 0-byte dosyalar (bir shell komutunun yanlis yorumlanmasi
+# olmali - "npm run" gibi bir komutun kabuk tarafindan dosya adi sanilmasi)
+npm
+npm run
+electron
+whisper-pro@1.0.0
+
+# Eski debug ciktilari (kaynak kod degil, kalici referans degeri yok)
+debug_output.html
+debug_served.html

@@ -1,0 +1,62 @@
+# AGENTS.md
+
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+
+## What this is
+
+Whisper Pro is a Windows desktop app for **live, real-time conversation across languages**. It captures system audio (or a microphone), transcribes the other party's speech with faster-whisper, and generates AI reply suggestions. The defining workflow: the user reads the **Turkish phonetic spelling** (`romanized`/`okunuş`) of a suggested reply aloud to speak back in a language they don't know (Japanese, Arabic, Chinese, Russian, Spanish, etc.). Optimize for that read-aloud use — pronunciations must be effortless to read and replies must sound natural to a native speaker.
+
+The codebase and all code comments are in **Turkish**. Match that when editing; keep comment density and idiom consistent with surrounding code.
+
+## Running & building
+
+- **Dev (full app):** `npm start` — Electron (`main.js`) spawns the Flask backend (`buyedektir.py`) on port 5000 and loads the UI. `başlat.bat` is a double-click wrapper for this.
+- **Backend only (no Electron):** `python buyedektir.py` (or `calistir.bat`) → serves http://localhost:5000. Override with `HOST` / `PORT` env vars (defaults `127.0.0.1:5000`, local-only). This is the fastest way to iterate on backend/frontend.
+- **Build portable exe:** `npm run build` → `dist/Whisper-Pro-win32-x64/Whisper-Pro.exe`. The `dist/` tree is a full copy of the app — rebuild after backend/frontend changes; it does NOT auto-update.
+- `main.js` prefers a project-local venv (`.venv/`/`venv/`) python, then `python`/`python3`/`py` on PATH; it kills orphaned python holding port 5000 and restarts the backend on crash (capped).
+
+`transkribe.py` is a **standalone** tkinter GUI for transcribing audio/video files — unrelated to the live app, shares no code. Run with `python transkribe.py`.
+
+## Testing & validation
+
+There is no test framework. Validate changes with:
+
+- `python -m py_compile buyedektir.py` and `python -m pyflakes buyedektir.py` (keep pyflakes clean).
+- `python test_smoke.py` — permanent regression suite (no pytest dependency; exit 0 = pass). Covers the 15-language pronunciation table, the multilingual hallucination filter, the answer-mode contract (parallel calls + `ai_options_partial` streaming + dedup), settings bounds, and the JSON salvage parser. Run after any change to normalization, prompts, or the answer endpoint.
+- Frontend JS has no build step. Validate by extracting inline `<script>` blocks from `templates/index.html` and running `node --check` on them.
+- Backend route/socket logic can be exercised with Flask's `app.test_client()` and `socketio.test_client(app)` (used previously to verify the parallel-answer and partial-emit paths).
+- `test_cevap_onerisi.py` is an ad-hoc script that rebuilds the answer-mode prompt from `buyedektir.py` and calls the live API to eyeball pronunciation quality (it reads an API key from a local file). Not a unit test.
+- Full smoke test: start the backend (`PORT=509x python buyedektir.py`), confirm `GET /` → 200 and the `/api/*` endpoints respond. Backend startup is slow (~40-50s) due to torch/faster-whisper imports.
+
+## Architecture
+
+**Backend (`buyedektir.py`, ~3000 lines, Flask + SocketIO in `threading` async mode).** One module-global `transcriber` (`WhisperWebTranscriber`) and `mic_recorder` hold all state. Real-time pipeline:
+
+- **Capture thread** (`_capture_audio`) reads native-rate audio, downmixes to mono, resamples to 16 kHz via a cached FIR filter (`_resample_int16`), runs WebRTC VAD to segment on silence, and pushes utterances to `audio_queue` (maxsize 5; drops oldest under load and emits `transcription_lagging`).
+- **Transcribe thread** (`_transcribe_audio`) pulls from the queue, runs faster-whisper, filters hallucinations (`_is_likely_hallucination`, multilingual), corrects the detected language by script (`_detect_script_lang`), and emits `new_transcription`.
+- **Offloaded work:** translation (`translate_executor`) and speaker diarization (`diarize_executor`, runs in parallel with Whisper) are separate single-worker `ThreadPoolExecutor`s so they never block transcription. A monotonic `_session_id` guards every thread so a stale worker from a previous start/stop can't leak into a new session. Incoming-transcript translation also has a backlog guard: a translation more than `TRANSLATE_MAX_LAG` transcripts behind the latest is skipped (keeps live translations current instead of falling indefinitely behind).
+- **Live partial transcription** (`_transcribe_partial`, `_partial_executor`, toggle `partial_enabled` via `/api/partial_toggle`): while speech accumulates, a snapshot of the growing buffer is transcribed every `PARTIAL_INTERVAL`s and emitted as `partial_transcription` for a live on-screen preview — before the 2 s silence segment finalizes. It NEVER touches the final path (no transcriptions list/file/AI/translation). A `_model_lock` serializes all `current_model.transcribe(...)` calls (partial + final + mic + warmup) since they share one `WhisperModel`; partials skip when a final is queued (`audio_queue` non-empty) so the final is never starved. Frontend shows a greyed preview item that `new_transcription` replaces (with a 6 s hide-timer fallback).
+- Model load (`load_model`) tries CUDA (float16) then falls back to CPU (int8), scales `cpu_threads` to the machine, and warms the model in a background thread so the first real utterance doesn't pay CUDA/alloc startup.
+
+**AI reply suggestions (`/api/generate_ai_response`).** Modes: `answer` (reply options), `translate`, `translate_dual`. Key design points:
+
+- **Answer mode runs TWO parallel OpenAI calls** (via `_ai_executor`) that split the 4 suggestions by style (2 + 2, see `style_splits`) — latency is dominated by output tokens, so halving per-call output roughly halves wait. Results are merged and deduplicated (`_extract_answer_options` / `_parse_answer_options`); if one call fails the other's options still show. `_salvage_answer_options` recovers truncated JSON.
+- **Streaming:** if the UI sends a `request_id`, each parallel call emits its options via the `ai_options_partial` socket event the moment it finishes, so suggestions appear before the HTTP response (which returns the merged, deduped, canonical list).
+- **Prompt structure:** static rule blocks (pronunciation guides, tone/quality rules) go FIRST, variable content (context + the message) LAST, to hit OpenAI's automatic prefix caching. Don't reorder casually.
+
+**Pronunciation system.** `PRONUNCIATION_GUIDES` holds per-language romanization rules; `_build_pronunciation_guide(lang)` injects ONLY the target language's guide (irrelevant languages degrade quality). `_normalize_turkish_pronunciation(text, lang)` post-processes model output into readable Turkish per language — note Japanese intentionally keeps hyphens (`kore-va`, `suki-des-ka`) while all other languages strip them. `_finalize_pronunciation` is the shared final cleanup.
+
+**Frontend (`templates/index.html` + `static/*.js`, vanilla JS + socket.io).** The main application flow remains inline; Cockpit, reading mode, and quick phrases live in classic global scripts (`static/cockpit.js`, `static/reading-mode.js`, `static/quick-phrases.js`) loaded after the inline block. `renderAiResult` is shared by both the final HTTP response and partial socket events (`partial` flag). Transcript text is kept in a `transcriptionTexts` map keyed by id; the DOM is pruned to `MAX_DOM_ITEMS` and the map is cleaned in lockstep. `window._pendingAiRequests` tracks in-flight answer requests for the streaming path. Always escape interpolated user/AI data with `escapeHtml`/`escapeJsString`.
+
+- **Quick phrases (`⚡ Hızlı Kalıplar`):** `static/quick-phrases.js` holds the `QUICK_PHRASES` object with ~10 ready common phrases per target language (ja/en/es/de/fr/it/pt/ru/ko/zh/ar), each `{tr, t (native, for TTS), o (okunuş)}`, rendered by `renderQuickPhrases()` for the current `aiTargetLang`. The okunuş values are NOT hand-written — they're generated by `_gen_phrases.py` (standalone, imports `buyedektir`) which runs each phrase's phonetic/native form through `_normalize_turkish_pronunciation` so they stay consistent with the rest of the app. To add/edit phrases, edit `_gen_phrases.py`, re-run it, and paste the output into `static/quick-phrases.js`.
+
+## Configuration & gotchas
+
+- **Restart the backend after editing `index.html` or `buyedektir.py`.** Flask/Jinja caches the rendered template, so editing `templates/index.html` and just reloading the page serves the OLD HTML — restart the Python process (`başlat.bat` / `npm start`, or `python buyedektir.py`). For the portable `dist/` exe, run `npm run build` (dist is a full copy). This is the #1 source of "my change didn't take effect" confusion.
+- **API key:** the AI features read `OPENAI_API_KEY` from the environment/`.env` and call `https://api.openai.com/v1/chat/completions` (default model `gpt-4.1-mini` — chosen via live testing as the best speed/quality non-reasoning mini: ~2.8s/reply, 0% Turkish-leak in the okunuş, no reasoning-token cost; selectable from `allowed_models`). If unset, AI suggestions/translation are disabled (startup logs "OPENAI_API_KEY ... bulunamadı"). The key is verified in a background thread so startup isn't blocked.
+- **Secret hygiene:** API keys and tokens belong only in the ignored `.env`; never keep them in notes, transcripts, test fixtures, or other plaintext repository files. `npm run scan` checks the source tree before packaging, but any exposed key must still be revoked and rotated at its provider.
+- **Legacy env vars:** `.env` may still carry `MINIMAX_*` keys from an older provider — **the current code ignores them**. Don't wire them back in without intent.
+- **`HF_TOKEN`** enables pyannote speaker diarization, which is **lazy-loaded** (only when diarization is turned on, not at startup) to keep launch fast.
+- **DeepL** translation is optional (`DeepLTranslator`); when the provider is OpenAI the key lives on the responder. `translate(..., force=True)` bypasses the live-transcription translation toggle for user-initiated (PTT) translations.
+- `buyedektir.py` uses **LF line endings** — preserve them when editing on Windows.
+- Transcripts append to `transcriptions.txt` (auto-rotates at 5 MB); speaker profiles persist as `speaker_profiles.json` (JSON, not pickle — avoids deserialization risk).

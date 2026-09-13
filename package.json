@@ -1,0 +1,23 @@
+{
+    "name": "whisper-pro",
+    "version": "1.0.0",
+    "description": "Whisper + DeepL + Speaker Diarization Desktop App",
+    "type": "commonjs",
+    "main": "main.js",
+    "author": "Antigravity",
+    "license": "MIT",
+    "scripts": {
+        "start": "electron .",
+        "dev": "set \"DEBUG=*\" && electron .",
+        "build": "node build.js",
+        "scan": "node build.js --scan-source"
+    },
+    "dependencies": {
+        "electron-store": "^8.2.0"
+    },
+    "devDependencies": {
+        "electron": "^34.0.0",
+        "electron-builder": "^24.6.4",
+        "electron-packager": "^17.1.2"
+    }
+}
