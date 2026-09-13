@@ -109,6 +109,8 @@ function renderReplyCockpit(id, options, effectiveLang, langLabel, partial) {
     const host = document.getElementById('replyCockpitOptions');
     if (!host) return;
     const previousKey = document.activeElement?.closest?.('.reply-option-card')?.dataset.answerKey || '';
+    const previousAction = document.activeElement?.dataset?.replyAction || 'read';
+    const previousScroll = host.scrollTop;
     const unique = mergeUniqueAnswerOptions([], options || []).slice(0, 4);
     if (!unique.length) {
         host.innerHTML = '<div class="reply-cockpit-empty">Kullanılabilir cevap alınamadı.</div>';
@@ -127,14 +129,16 @@ function renderReplyCockpit(id, options, effectiveLang, langLabel, partial) {
             <div class="reply-option-native">${escapeHtml(nativeText)}</div>
             ${meaning ? `<div class="reply-option-meaning">${escapeHtml(meaning)}</div>` : ''}
             <div class="reply-option-actions">
-                <button type="button" class="reply-read-button" onclick="openReadingMode('${escapeJsString(pronunciation)}','${escapeJsString(nativeText)}','${escapeJsString(meaning)}','${escapeJsString(lang)}')">Okuma modu</button>
-                <button type="button" onclick="copyResponseText('${escapeJsString(pronunciation)}')">Okunuşu kopyala</button>
-                <button type="button" onclick="speakText('${escapeJsString(nativeText)}','${escapeJsString(lang)}')">Dinle</button>
+                <button type="button" class="reply-read-button" data-reply-action="read" onclick="openReadingMode('${escapeJsString(pronunciation)}','${escapeJsString(nativeText)}','${escapeJsString(meaning)}','${escapeJsString(lang)}')">Okuma modu</button>
+                <button type="button" data-reply-action="copy" onclick="copyResponseText('${escapeJsString(pronunciation)}')">Okunuşu kopyala</button>
+                <button type="button" data-reply-action="listen" onclick="speakText('${escapeJsString(nativeText)}','${escapeJsString(lang)}')">Dinle</button>
+                <button type="button" data-reply-action="save" onclick="saveFavorite('${escapeJsString(nativeText)}','${escapeJsString(opt.turkish || '')}','${escapeJsString(opt.romanized || '')}','${escapeJsString(lang)}')">Kalıplara kaydet</button>
             </div>
         </article>`;
     }).join('');
     setCockpitValue('replyCockpitProgress', partial ? 'Diğer seçenekler hazırlanıyor' : `${unique.length} seçenek hazır`);
-    if (previousKey) host.querySelector(`[data-answer-key="${CSS.escape(previousKey)}"] .reply-read-button`)?.focus();
+    host.scrollTop = previousScroll;
+    if (previousKey) host.querySelector(`[data-answer-key="${CSS.escape(previousKey)}"] [data-reply-action="${CSS.escape(previousAction)}"]`)?.focus({preventScroll:true});
 }
 
 // 1-4 tuslari yalniz gorunur cevap kokpitindeki okuma dugmelerini acar.
@@ -154,6 +158,7 @@ document.addEventListener('keydown', (e) => {
 // adimina bagliydi; bu, o adimi klavyeden de acar.
 document.addEventListener('keydown', (e) => {
     if (e.key !== 'c' && e.key !== 'C') return;
+    if (e.repeat || document.getElementById('readingOverlay')?.classList.contains('visible')) return;
     const ae = document.activeElement;
     const tag = (ae && ae.tagName ? ae.tagName : '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select' || (ae && ae.isContentEditable)) return;

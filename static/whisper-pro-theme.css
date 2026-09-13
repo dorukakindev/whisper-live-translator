@@ -8,18 +8,18 @@
 :root {
     color-scheme: dark;
 
-    --wp-canvas: #090b0e;
-    --wp-base: #0a0c0f;
-    --wp-subtle: #101419;
-    --wp-surface: #151b22;
-    --wp-raised: #1c242c;
+    --wp-canvas: #0c1016;
+    --wp-base: #10161e;
+    --wp-subtle: #151d27;
+    --wp-surface: #19222d;
+    --wp-raised: #222e3b;
     --wp-input: #10161b;
     --wp-border: #27313b;
     --wp-border-control: #2b3741;
     --wp-border-strong: #3a4652;
     --wp-text: #edf1f3;
     --wp-text-secondary: #a1adb7;
-    --wp-text-muted: #7b8993;
+    --wp-text-muted: #95a3b1;
     --wp-accent: #d5a35c;
     --wp-accent-hover: #efbd73;
     --wp-accent-soft: rgba(213, 163, 92, 0.12);
@@ -56,14 +56,14 @@
 
 body.light-mode {
     color-scheme: light;
-    --wp-canvas: #dfe3e4;
-    --wp-base: #e8ebec;
-    --wp-subtle: #d7dcde;
-    --wp-surface: #f0f2f2;
+    --wp-canvas: #eef1f5;
+    --wp-base: #f7f9fc;
+    --wp-subtle: #edf1f6;
+    --wp-surface: #ffffff;
     --wp-raised: #ffffff;
-    --wp-input: #e5e9ea;
-    --wp-border: #bbc3c6;
-    --wp-border-control: #aeb8bc;
+    --wp-input: #f5f7fa;
+    --wp-border: #dce2ea;
+    --wp-border-control: #c2ccd7;
     --wp-border-strong: #879398;
     --wp-text: #171b1e;
     --wp-text-secondary: #465157;
@@ -181,7 +181,7 @@ textarea:focus-visible,
     gap: 20px;
     padding: 12px 22px;
     text-align: left;
-    background: rgba(10, 12, 15, 0.94);
+    background: var(--wp-canvas);
     border-bottom: 1px solid #202a33;
     box-shadow: 0 10px 34px rgba(0, 0, 0, 0.2);
     animation: none;
@@ -191,7 +191,7 @@ textarea:focus-visible,
 }
 
 body.light-mode .header {
-    background: rgba(232, 235, 236, 0.94);
+    background: var(--wp-surface);
     border-bottom-color: var(--wp-border);
 }
 
@@ -385,17 +385,19 @@ body.light-mode .brand-mark {
 .main-grid {
     width: min(1760px, 100%);
     display: grid;
-    grid-template-columns: minmax(300px, 350px) minmax(440px, 1fr) minmax(330px, 420px);
+    grid-template-columns: minmax(270px, 300px) minmax(0, 1fr) minmax(340px, 420px);
+    align-items: start;
     gap: 18px;
     margin: 0 auto;
     padding: 18px 22px 24px;
 }
 
 body.controls-collapsed .main-grid {
-    grid-template-columns: 0 minmax(440px, 1fr) minmax(330px, 420px);
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 460px);
 }
 
 body.controls-collapsed .control-panel {
+    display: none;
     visibility: hidden;
     width: 0;
     padding: 0;
@@ -420,8 +422,8 @@ body.controls-collapsed .control-panel {
 .reply-cockpit {
     position: sticky;
     top: 94px;
-    height: calc(100vh - 112px);
-    min-height: 560px;
+    height: calc(100vh - 190px);
+    min-height: 480px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -449,7 +451,7 @@ body.controls-collapsed .control-panel {
     max-width: 45ch;
     margin: 5px 0 0;
     color: var(--wp-text-muted);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.4;
 }
 
@@ -463,15 +465,16 @@ body.controls-collapsed .control-panel {
     min-height: 0;
     flex: 1 1 auto;
     display: grid;
-    grid-template-rows: repeat(4, minmax(0, 1fr));
-    gap: 8px;
+    grid-auto-rows: max-content;
+    align-content: start;
+    gap: 12px;
     overflow-y: auto;
     padding: 12px;
     background: var(--wp-base);
 }
 
 .reply-cockpit-empty {
-    grid-row: 1 / -1;
+    min-height: 260px;
     display: grid;
     place-items: center;
     padding: 24px;
@@ -480,12 +483,12 @@ body.controls-collapsed .control-panel {
 }
 
 .reply-option-card {
-    min-height: 0;
+    min-height: 180px;
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    overflow: auto;
-    padding: 11px 12px;
+    gap: 8px;
+    overflow: visible;
+    padding: 16px;
     color: var(--wp-text);
     background: var(--wp-surface);
     border: 1px solid var(--wp-border);
@@ -510,7 +513,7 @@ body.controls-collapsed .control-panel {
     color: var(--wp-accent-hover);
     font-size: clamp(18px, 1.55vw, 24px);
     font-weight: 680;
-    line-height: 1.32;
+    line-height: 1.5;
     overflow-wrap: anywhere;
 }
 
@@ -579,11 +582,12 @@ body.controls-collapsed .control-panel {
 .control-panel {
     position: sticky;
     top: 94px;
-    max-height: calc(100vh - 112px);
+    max-height: calc(100vh - 190px);
     display: flex;
     flex-direction: column;
     gap: 12px;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 0 6px 32px 0;
     background: transparent;
     border: 0;
@@ -593,7 +597,10 @@ body.controls-collapsed .control-panel {
 
 .control-panel > * {
     flex: 0 0 auto;
+    min-width: 0;
 }
+
+.control-panel select { width: 100%; min-width: 0; }
 
 .context-indicator,
 .model-language-settings,
@@ -671,11 +678,11 @@ body.controls-collapsed .control-panel {
 .settings-panel h4 {
     margin: 0 0 13px;
     color: var(--wp-text-secondary);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     line-height: 1.35;
-    letter-spacing: 0.095em;
-    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    text-transform: none;
 }
 
 .context-indicator h4::after,
@@ -718,6 +725,8 @@ body.controls-collapsed .control-panel {
 /* Form kontrolleri */
 input[type="text"],
 input[type="password"],
+input[type="date"],
+input[type="search"],
 select,
 textarea {
     min-height: 40px;
@@ -1117,8 +1126,8 @@ input[type="range"]::-webkit-slider-thumb {
 .transcription-area {
     position: sticky;
     top: 94px;
-    height: calc(100vh - 112px);
-    min-height: 560px;
+    height: calc(100vh - 190px);
+    min-height: 480px;
     overflow: hidden;
     padding: 0;
     background: var(--wp-surface);
@@ -1126,7 +1135,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .transcription-area::before {
-    content: "";
+    content: none;
     position: absolute;
     z-index: 3;
     top: 0;
@@ -1138,6 +1147,9 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .transcription-controls {
+    flex-wrap: wrap;
+    flex-shrink: 0;
+    gap: 12px;
     position: relative;
     min-height: 72px;
     margin: 0;
@@ -1155,7 +1167,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .transcription-controls h2::before {
-    content: "LIVE / ";
+    content: "● ";
     color: var(--wp-accent);
     font-family: "Cascadia Mono", Consolas, monospace;
     font-size: 9px;
@@ -1186,13 +1198,12 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .transcription-item {
-    margin: 0;
+    margin: 0 0 10px;
     padding: 13px 12px 13px 14px;
-    background: transparent;
-    border: 0;
-    border-bottom: 1px solid var(--wp-border);
+    background: var(--wp-surface);
+    border: 1px solid var(--wp-border);
     border-left: 2px solid transparent;
-    border-radius: 0;
+    border-radius: var(--wp-radius-md);
     animation: none;
     transition: background-color var(--wp-motion-fast) var(--wp-ease),
         border-color var(--wp-motion-fast) var(--wp-ease);
@@ -1364,9 +1375,10 @@ body.light-mode .mini-card {
 }
 
 .reading-overlay {
-    background: rgba(9, 11, 14, 0.985);
+    background: var(--wp-canvas);
     overflow: auto;
     padding: clamp(14px, 4vw, 48px);
+    cursor: default;
 }
 
 body.reading-mode-open { overflow: hidden; }
@@ -1381,7 +1393,19 @@ body.reading-mode-open { overflow: hidden; }
     overflow: auto;
 }
 
+.translation-status-note { margin-top: 8px; color: var(--wp-text-muted); font-size: 12px; }
+.translation-status-note[data-state="failed"],
+.translation-status-note[data-state="skipped"] { color: var(--wp-warning); }
+
+.reading-dialog > * { flex-shrink: 0; }
+.reading-dialog .reading-hint { position: static; color: var(--wp-text-muted); }
+
 .reading-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--wp-canvas);
+    padding-bottom: 10px;
     width: 100%;
     display: flex;
     align-items: center;
@@ -1506,6 +1530,87 @@ body.reading-mode-open { overflow: hidden; }
 }
 
 /* Dar ekranlar */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+.card.reply-cockpit { padding: 0; }
+.reading-audio-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+
+.transcript-history-filters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.transcript-history-filters > input {
+    width: 100%;
+    min-width: 0;
+}
+
+.transcript-history-filters > button {
+    grid-column: 1 / -1;
+    min-height: 34px;
+}
+
+.transcription-controls > div { flex-wrap: wrap; }
+.transcription-controls + div { flex-shrink: 0; }
+.ai-chat-result { max-height: 180px; overflow-y: auto; }
+
+.empty-state-title {
+    color: var(--wp-text);
+    font-size: 20px;
+    font-weight: 650;
+    letter-spacing: -.025em;
+}
+
+.empty-state-description {
+    max-width: 32ch;
+    margin-top: 8px;
+    font-size: 13px;
+}
+
+.setup-checklist {
+    width: min(100%, 320px);
+    gap: 8px;
+    counter-reset: setup;
+}
+
+.setup-step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--wp-surface);
+    border-color: var(--wp-border);
+    border-radius: 10px;
+    line-height: 1.4;
+}
+
+.setup-step::before {
+    counter-increment: setup;
+    content: counter(setup, decimal-leading-zero);
+    color: var(--wp-text-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+.setup-checklist [data-ready="false"] { color: var(--wp-text-secondary); }
+.setup-step:hover { background: var(--wp-raised); border-color: var(--wp-accent); }
+body.light-mode .reply-read-button { color: #ffffff; }
+body.light-mode .btn-primary,
+body.light-mode .ai-ask-btn { color: #ffffff; }
+.device-selector > label { color: var(--wp-text-secondary) !important; }
+
 @media (max-width: 1180px) {
     .main-grid {
         grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
@@ -1545,6 +1650,10 @@ body.reading-mode-open { overflow: hidden; }
         padding: 14px;
     }
 
+    body.controls-collapsed .main-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .control-panel,
     .transcription-area,
     .reply-cockpit {
@@ -1558,7 +1667,8 @@ body.reading-mode-open { overflow: hidden; }
         display: flex;
         flex-direction: column;
         padding: 0;
-        overflow: visible;
+        overflow-y: auto;
+        max-height: 50vh;
     }
 
     body.controls-collapsed .control-panel { display: none; }
@@ -1577,6 +1687,8 @@ body.reading-mode-open { overflow: hidden; }
         grid-template-columns: repeat(2, minmax(0, 1fr));
         overflow: visible;
     }
+
+    .reply-cockpit-empty { grid-column: 1 / -1; }
 
     .reply-option-card { min-height: 210px; }
 

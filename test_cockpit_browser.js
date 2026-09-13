@@ -70,7 +70,7 @@ app.whenReady().then(async () => {
     fs.mkdirSync(outputDir, {recursive: true});
     const fixturePath = path.join(outputDir, 'fixture.html');
     fs.writeFileSync(fixturePath, fixtureHtml(), 'utf8');
-    const win = new BrowserWindow({show:false, webPreferences:{sandbox:true, contextIsolation:true}});
+    const win = new BrowserWindow({show:false, webPreferences:{sandbox:true, contextIsolation:true, backgroundThrottling:false}});
     await win.loadFile(fixturePath);
     await new Promise(resolve => setTimeout(resolve, 150));
     const initial = await win.webContents.executeJavaScript(`({
@@ -84,10 +84,32 @@ app.whenReady().then(async () => {
     assert.deepStrictEqual(ownership, {staleIgnored:true, readingPreserved:true,
         latencyDetailsVisible:true, setupStepCount:4, setupTargetFocused:true,
         duplicateIds:[]});
+    const readingChecks = await win.webContents.executeJavaScript(`(() => {
+        const opener = document.querySelector('.reply-read-button');
+        opener.focus(); opener.click();
+        changeReadingFont(0.3);
+        document.dispatchEvent(new KeyboardEvent('keydown', {key:'2',bubbles:true}));
+        const remembered = _readingFontScale === 1.3;
+        changeReadingFont(NaN);
+        const finite = Number.isFinite(_readingFontScale);
+        let generated = false;
+        const answer = document.querySelector('.ai-answer-btn');
+        const original = answer.onclick;
+        answer.onclick = () => {generated = true;};
+        document.dispatchEvent(new KeyboardEvent('keydown', {key:'c',bubbles:true}));
+        answer.onclick = original;
+        closeReadingMode();
+        const focusRestored = document.activeElement === opener;
+        whisperStorage.removeItem('readingFontScale');
+        return {remembered,finite,focusRestored,blocked:!generated};
+    })()`);
+    assert.deepStrictEqual(readingChecks, {remembered:true,finite:true,focusRestored:true,blocked:true});
+    await win.webContents.executeJavaScript(`toggleLatencyDetails(); window.scrollTo(0, 0); document.querySelector('.control-panel').scrollTop = 0;`);
 
     for (const [width, height] of sizes) {
         win.setSize(width, height);
-        await new Promise(resolve => setTimeout(resolve, 80));
+        await win.webContents.executeJavaScript(`document.body.classList.remove('controls-collapsed'); window.scrollTo(0, 0);`);
+        await new Promise(resolve => setTimeout(resolve, 250));
         const geometry = await win.webContents.executeJavaScript(`({
             overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
             transcript: !!document.querySelector('.transcription-area'),
@@ -98,8 +120,30 @@ app.whenReady().then(async () => {
         assert(geometry.transcript && geometry.cockpit && geometry.buttons);
         const image = await win.webContents.capturePage();
         fs.writeFileSync(path.join(outputDir, `${width}x${height}-dark.png`), image.toPNG());
+        // Gizlenen ayarlar dar ekranda ikinci bir sütun bırakmamalı.
+        await win.webContents.executeJavaScript(`document.body.classList.add('controls-collapsed')`);
+        const layout = await win.webContents.executeJavaScript(`(() => {
+            const panel = document.querySelector('.transcription-area').getBoundingClientRect();
+            const reply = document.querySelector('.reply-cockpit').getBoundingClientRect();
+            const filters = document.querySelector('.transcript-history-filters');
+            return {width: innerWidth, right: Math.max(panel.right, reply.right),
+                stacked: reply.top >= panel.bottom,
+                filtersFit: filters.scrollWidth <= filters.clientWidth};
+        })()`);
+        assert(layout.right <= layout.width, width + 'px kapalı ayarlarda taşma');
+        assert(layout.filtersFit, width + 'px arama filtrelerinde taşma');
+        if (layout.width <= 980) assert(layout.stacked, width + 'px tek sütun düzeni');
+        await win.webContents.executeJavaScript(`window.scrollTo(0, 0)`);
+        await new Promise(resolve => setTimeout(resolve, 250));
+        fs.writeFileSync(path.join(outputDir, `${width}x${height}-focused.png`),
+            (await win.webContents.capturePage()).toPNG());
+        await win.webContents.executeJavaScript(`document.body.classList.remove('controls-collapsed')`);
     }
 
+    win.setSize(1440, 900);
+    await win.webContents.executeJavaScript(`document.body.classList.add('light-mode')`);
+    await new Promise(resolve => setTimeout(resolve, 500));
+    fs.writeFileSync(path.join(outputDir, '1440x900-light.png'), (await win.webContents.capturePage()).toPNG());
     await win.webContents.executeJavaScript(`document.body.classList.add('light-mode'); openReadingMode(
         'Sukoşi okureru kamo şiremasen. Çok uzun bir okunuş satırı taşmadan devam etmeli.',
         '少し遅れるかもしれません。','Biraz gecikebilirim.','ja')`);
@@ -114,6 +158,69 @@ app.whenReady().then(async () => {
     assert.strictEqual(modal.role, 'dialog'); assert(modal.visible); assert.strictEqual(modal.overflow, false);
     assert(modal.focused.includes('reading-close-btn'));
     fs.writeFileSync(path.join(outputDir, '600x800-light-reading.png'), (await win.webContents.capturePage()).toPNG());
+    const readingFooter = await win.webContents.executeJavaScript(`(() => {
+        const dialog = document.querySelector('.reading-dialog');
+        dialog.scrollTop = dialog.scrollHeight;
+        const close = dialog.querySelector('.reading-close-btn').getBoundingClientRect();
+        const controls = dialog.querySelectorAll('.reading-audio-actions button');
+        let slowRate = null;
+        const originalSpeak = speakText;
+        speakText = (_text, _lang, rate) => {slowRate = rate;};
+        controls[1].click();
+        speakText = originalSpeak;
+        return {slowRate,closeVisible:close.top >= 0 && close.bottom <= innerHeight,
+            audioVisible:controls[2].getBoundingClientRect().bottom <= innerHeight};
+    })()`);
+    assert.deepStrictEqual(readingFooter, {slowRate:0.65,closeVisible:true,audioVisible:true});
+    const favoriteChecks = await win.webContents.executeJavaScript(`(() => {
+        closeReadingMode();
+        whisperStorage.setItem(FAVORITES_KEY, JSON.stringify([null, 3, {translation:7},
+            {translation:'Merhaba',turkish:{bad:true}},
+            {translation:'こんにちは',turkish:'İyi günler',romanized:'Konniçiva',lang:'ja'}]));
+        renderFavorites();
+        const sanitized = loadFavorites().length === 2 && loadFavorites()[0].turkish === '';
+        document.getElementById('favoritesSearch').value = 'İYİ';
+        renderFavorites();
+        const filtered = document.querySelectorAll('#favoritesList .mini-card').length === 1;
+        const deleteButton = document.querySelector('#favoritesList button[title="Kalıplardan sil"]');
+        saveFavorite('Yeni kayıt','','','tr');
+        deleteButton.click();
+        const correctDelete = loadFavorites().map(f=>f.translation).join('|') === 'Yeni kayıt|Merhaba';
+        deleteFavorite(-1);
+        const invalidDeleteIgnored = loadFavorites().length === 2;
+        document.getElementById('favoritesSearch').value = '';
+        const options = [{translation:'こんにちは',turkish:'Merhaba',romanized:'Konniçiva',language:'ja'}];
+        selectReplyTarget('regression','Odak testi',true);
+        renderReplyCockpit('regression',options,'ja','Japonca',true);
+        document.querySelector('[data-reply-action="save"]').click();
+        const savedFromCard = loadFavorites()[0].romanized === 'Konniçiva';
+        document.querySelector('[data-reply-action="listen"]').focus();
+        renderReplyCockpit('regression',options,'ja','Japonca',false);
+        const actionPreserved = document.activeElement.dataset.replyAction === 'listen';
+        const opener = document.querySelector('.reply-read-button');
+        opener.focus(); opener.click();
+        renderReplyCockpit('regression',options,'ja','Japonca',false);
+        closeReadingMode();
+        const replacedFocus = !opener.isConnected && document.activeElement.classList.contains('reply-read-button');
+        whisperStorage.removeItem(FAVORITES_KEY);
+        return {sanitized,filtered,correctDelete,invalidDeleteIgnored,savedFromCard,actionPreserved,replacedFocus};
+    })()`);
+    assert.deepStrictEqual(favoriteChecks, {sanitized:true,filtered:true,correctDelete:true,
+        invalidDeleteIgnored:true,savedFromCard:true,actionPreserved:true,replacedFocus:true});
+    const translationChecks = await win.webContents.executeJavaScript(`(() => {
+        addTranscription({id:999,text:'Translation status test',translation_status:'pending'},true);
+        const item = document.querySelector('[data-transcription-id="999"]');
+        const pending = item.querySelector('.translation-status-note')?.textContent.includes('sırada');
+        addTranscription({id:999,text:'Translation status test',translation_status:'failed'},true);
+        const failed = item.querySelector('.translation-status-note')?.textContent.includes('yeniden');
+        updateTranscriptTranslationStatus(item,'skipped');
+        const skipped = item.querySelector('.translation-status-note')?.textContent.includes('atlandı');
+        appendInlineTranslationToItem(item,'Çeviri sonucu','TR');
+        updateTranscriptTranslationStatus(item,'failed');
+        const completed = !item.querySelector('.translation-status-note');
+        return {pending,failed,skipped,completed};
+    })()`);
+    assert.deepStrictEqual(translationChecks, {pending:true,failed:true,skipped:true,completed:true});
     win.close();
     console.log('Gercek Chromium Cockpit davranis ve gorsel testleri gecti:', outputDir);
     app.quit();

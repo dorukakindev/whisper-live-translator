@@ -29,6 +29,7 @@ speaker_profiles.pkl
 # Buyuk / uretilmis dizinler
 dist/
 node_modules/
+artifacts/cockpit-v2/
 whisper_models/
 
 # Kazara olusmus 0-byte dosyalar (bir shell komutunun yanlis yorumlanmasi

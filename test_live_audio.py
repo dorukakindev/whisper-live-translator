@@ -1,0 +1,83 @@
+"""Ses hattını model/SciPy yüklemeden gerçek fonksiyon gövdeleriyle sınar."""
+import ast
+import logging
+from pathlib import Path
+from collections import deque
+from types import SimpleNamespace
+import threading
+import time
+import re
+import numpy as np
+
+
+tree = ast.parse(Path('buyedektir.py').read_text(encoding='utf-8'))
+join_node = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+                 and n.name == '_join_transcription_segments')
+klass = next(n for n in tree.body if isinstance(n, ast.ClassDef)
+             and n.name == 'WhisperWebTranscriber')
+capture_node = next(n for n in klass.body if isinstance(n, ast.FunctionDef)
+                    and n.name == '_capture_audio')
+namespace = dict(np=np, deque=deque, time=time, re=re,
+                 logger=logging.getLogger('live-audio-test'))
+exec(compile(ast.Module(body=[join_node, capture_node], type_ignores=[]),
+             'buyedektir.py', 'exec'), namespace)
+join = namespace['_join_transcription_segments']
+assert join([SimpleNamespace(text=s) for s in ['Bugün', 'toplantıya gelemem.']]) == 'Bugün toplantıya gelemem.'
+assert join([SimpleNamespace(text=s) for s in ['Merhaba.', 'Nasılsın?']]) == 'Merhaba. Nasılsın?'
+assert join([SimpleNamespace(text=s) for s in ['こんにちは', '。']]) == 'こんにちは。'
+
+
+def capture_case(prefix, speech, vad_fails=False, reset_at=None, ptt=False):
+    values = iter(prefix + speech + list(range(20, 28)))
+    captured = []
+    owner = SimpleNamespace(
+        CHUNK_DURATION_MS=30, RATE=16000, _lifecycle_lock=threading.Lock(),
+        _session_id=1, _result_generation=0, is_running=True, is_paused=False, ptt_active=ptt,
+        flush_now=False, partial_enabled=False, vad=None, capture_mode='system',
+        _utterance_seq=0, silence_duration=0.09, MAX_UTTERANCE_S=25, MAX_PTT_S=25,
+        last_emit_time=0, EMIT_INTERVAL=0.1,
+        _resolve_capture_device=lambda p, d: (0, {'maxInputChannels':1, 'defaultSampleRate':16000, 'name':'Test'}),
+        _close_active_audio_stream=lambda: None,
+        _enqueue_audio=lambda data, *args: captured.append(data.copy()))
+
+    read_index = 0
+    def read(count, **kwargs):
+        nonlocal read_index
+        read_index += 1
+        if read_index == reset_at:
+            owner._result_generation += 1
+            owner._utterance_seq += 1
+        if ptt and read_index == 18:
+            owner.ptt_active = False
+        try:
+            value = next(values)
+        except StopIteration:
+            owner.is_running = False
+            value = 0
+        return np.full(count, value, dtype=np.int16).tobytes()
+
+    stream = SimpleNamespace(read=read)
+    def classify(vad, data, rate):
+        if vad_fails:
+            raise ValueError('Test VAD hatası')
+        return data[0] >= 100
+
+    namespace.update(
+        pyaudio=SimpleNamespace(paInt16=8, PyAudio=lambda: SimpleNamespace(open=lambda **kwargs:stream)),
+        socketio=SimpleNamespace(emit=lambda *args, **kwargs:None),
+        _vad_is_speech=classify,
+        _record_health_error=lambda code: None)
+    namespace['_capture_audio'](owner, 0, 1)
+    return [data[::480].tolist() for data in captured]
+
+
+assert capture_case(list(range(1, 13)), [100, 101, 102]) == [
+    [7, 8, 9, 10, 11, 12, 100, 101, 102, 20, 21, 22]]
+assert capture_case(list(range(1, 80)), []) == [], 'Sessizlik tek başına döküme gönderilmemeli'
+assert capture_case([0] * 12, [-32768] * 3, vad_fails=True), 'Tam negatif ses seviyesi taşarak sessizlik sayılmamalı'
+for ptt_mode in (False, True):
+    reset_result = capture_case([100] * 4, [200] * 10, reset_at=5, ptt=ptt_mode)
+    assert reset_result == [[200] * 9 + [20, 21, 22]], 'Sıfırlama öncesi ses yeni kayda sızdı'
+onset_reset = capture_case(list(range(1, 13)), [200] * 10, reset_at=10)
+assert onset_reset[0][:2] == [11, 12], 'Sıfırlama önceki ilk-hece tamponunu temizlemeli'
+print('Metin birleştirme, ilk hece tamponu ve sessizlik testleri geçti')

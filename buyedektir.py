@@ -754,6 +754,12 @@ def _apply_exact_pronunciation_override(translation, romanized, lang_code, entri
     return romanized
 
 
+def _join_transcription_segments(segments):
+    """Model parça sınırını cümle sonu sanmadan metinleri birleştir."""
+    text = ' '.join(segment.text.strip() for segment in segments if segment.text.strip())
+    return re.sub(r'[ \t]+([,.!?。！？、])', r'\1', text).strip()
+
+
 def _stable_partial_parts(previous_text, current_text):
     """Ardisik iki kismi hipotezin ortak on-ekini kararlı, kalanini taslak yap.
 
@@ -3581,6 +3587,9 @@ class WhisperWebTranscriber:
             prev_ptt = False     # bir onceki turda PTT aktif miydi (birakilmayi yakalamak icin)
             # Her okuma read_frames (~30ms) sürer; sessizlik esigi gercek sureden hesaplanir.
             chunk_seconds = (read_frames / float(rate)) if rate else (self.CHUNK_DURATION_MS / 1000.0)
+            # VAD geç tetiklendiğinde ilk hece kesilmesin; yalnız son 180 ms tutulur.
+            pre_speech = deque(maxlen=max(1, round(0.18 / chunk_seconds)))
+            capture_generation = self._result_generation
             # Tani: ses akiyor mu / VAD tetikleniyor mu anlamak icin 3 sn'lik heartbeat
             diag_max_vol = 0.0
             diag_speech_chunks = 0
@@ -3593,6 +3602,14 @@ class WhisperWebTranscriber:
 
             while self.is_running and self._session_id == session_id:
                 try:
+                    if capture_generation != self._result_generation:
+                        audio_buffer = []
+                        ptt_buffer = []
+                        pre_speech.clear()
+                        silence_counter = 0
+                        prev_ptt = False
+                        self._last_partial_time = 0.0
+                        capture_generation = self._result_generation
                     # Beklet: giris sesini almayi durdur ama oturum/threadler canli kalsin.
                     # ISTISNA: PTT (Ctrl) basili tutuluyorsa veya yeni birakildiysa, bekleme
                     # sirasinda BILE sesi yakala/isle (asagidaki PTT dallari halleder).
@@ -3609,11 +3626,15 @@ class WhisperWebTranscriber:
                         if audio_buffer:
                             self._utterance_seq += 1
                         audio_buffer = []
+                        pre_speech.clear()
                         silence_counter = 0
                         self.flush_now = False
                         continue
                     data = stream.read(read_frames, exception_on_overflow=False)
                     consecutive_errors = 0  # basarili okuma: hata sayacini sifirla
+                    if (capture_generation != self._result_generation
+                            or session_id != self._session_id):
+                        continue  # Okuma sıfırlama sınırını aştı; bu kareyi kullanma.
 
                     # Çok kanallı sesi mono'ya çevir
                     audio_array = np.frombuffer(data, dtype=np.int16)
@@ -3632,6 +3653,7 @@ class WhisperWebTranscriber:
                             prev_ptt = True
                             self._utterance_seq += 1
                             audio_buffer = []        # devam eden normal utterance'i iptal et
+                            pre_speech.clear()
                             silence_counter = 0
                         ptt_buffer.append(audio_array)
 
@@ -3642,7 +3664,7 @@ class WhisperWebTranscriber:
                         if len(ptt_buffer) * chunk_seconds >= self.MAX_PTT_S:
                             full_ptt = np.concatenate(ptt_buffer)
                             ptt_buffer = []
-                            self._enqueue_audio(full_ptt)
+                            self._enqueue_audio(full_ptt, session_id, capture_generation)
                             socketio.emit('voice_activity', {'status': 'processing'})
                             logger.info(f"[ptt] {self.MAX_PTT_S:.0f}sn asildi, zorla bolundu")
                         continue
@@ -3654,7 +3676,7 @@ class WhisperWebTranscriber:
                             full_ptt = np.concatenate(ptt_buffer)
                             ptt_buffer = []
                             if ptt_seconds > 0.3:  # kazara dokunmalari ele
-                                self._enqueue_audio(full_ptt)
+                                self._enqueue_audio(full_ptt, session_id, capture_generation)
                                 socketio.emit('voice_activity', {'status': 'processing'})
                         continue
 
@@ -3665,16 +3687,17 @@ class WhisperWebTranscriber:
                         audio_buffer.append(audio_array)
                         full_audio = np.concatenate(audio_buffer)
                         if len(full_audio) / float(self.RATE) > 0.2:  # cok kisa/bos degilse
-                            self._enqueue_audio(full_audio)
+                            self._enqueue_audio(full_audio, session_id, capture_generation)
                             socketio.emit('voice_activity', {'status': 'processing'})
                             logger.info(f"[flush] manuel gonderim: {len(full_audio)/float(self.RATE):.1f}sn")
                         self._utterance_seq += 1
                         audio_buffer = []
+                        pre_speech.clear()
                         silence_counter = 0
                         continue
 
                     # VAD kontrolü
-                    volume = np.abs(audio_array).mean()
+                    volume = np.abs(audio_array.astype(np.int32)).mean()
 
                     try:
                         is_speech = _vad_is_speech(self.vad, audio_array, self.RATE)
@@ -3700,6 +3723,9 @@ class WhisperWebTranscriber:
                         diag_last_hb = _hb_now
 
                     if is_speech:
+                        if not audio_buffer:
+                            audio_buffer.extend(pre_speech)
+                            pre_speech.clear()
                         audio_buffer.append(audio_array)
                         silence_counter = 0
 
@@ -3716,7 +3742,7 @@ class WhisperWebTranscriber:
                             tail = audio_buffer[split_idx:]
                             if to_send:
                                 full_audio = np.concatenate(to_send)
-                                self._enqueue_audio(full_audio)
+                                self._enqueue_audio(full_audio, session_id, capture_generation)
                                 socketio.emit('voice_activity', {'status': 'processing'})
                                 logger.info(
                                     f"[max-utterance] {self.MAX_UTTERANCE_S:.0f}sn asildi; "
@@ -3750,7 +3776,7 @@ class WhisperWebTranscriber:
                                 try:
                                     self._partial_executor.submit(
                                         self._transcribe_partial, _snap, session_id,
-                                        self._utterance_seq)
+                                        self._utterance_seq, capture_generation)
                                 except Exception as _pe:
                                     self._partial_inflight = False
                                     logger.debug(f"Kismi onizleme submit edilemedi: {_pe}")
@@ -3773,7 +3799,7 @@ class WhisperWebTranscriber:
                                 total_duration = len(audio_buffer) * chunk_seconds
                                 if total_duration > 0.2:
                                     full_audio = np.concatenate(audio_buffer)
-                                    self._enqueue_audio(full_audio)
+                                    self._enqueue_audio(full_audio, session_id, capture_generation)
 
                                     # Throttled emit
                                     current_time = time.time()
@@ -3787,6 +3813,7 @@ class WhisperWebTranscriber:
                                 # Sonraki cumlenin ilk onizlemesi hemen gelsin (0.8sn'de)
                                 self._last_partial_time = 0.0
                         else:
+                            pre_speech.append(audio_array)
                             # Throttled emit
                             current_time = time.time()
                             if current_time - self.last_emit_time >= self.EMIT_INTERVAL:
@@ -3872,7 +3899,16 @@ class WhisperWebTranscriber:
         finally:
             self._diarize_slot.release()
     
-    def _enqueue_audio(self, audio):
+    def _enqueue_audio(self, audio, session_id=None, result_generation=None):
+        """Sıfırlama ile kuyruğa ekleme tek atomik sınırı paylaşır."""
+        with self._lifecycle_lock:
+            if ((session_id is not None and session_id != self._session_id)
+                    or (result_generation is not None
+                        and result_generation != self._result_generation)):
+                return
+            self._enqueue_audio_unlocked(audio)
+
+    def _enqueue_audio_unlocked(self, audio):
         """En yeni sesi koru; tuketici dolu/bos kontrolu arasinda ilerleyebilir."""
         dropped = False
         while True:
@@ -3900,8 +3936,10 @@ class WhisperWebTranscriber:
         while (self.is_running or not self.audio_queue.empty()) and self._session_id == session_id:
             commit_lock_held = False
             try:
-                audio_data = self.audio_queue.get(timeout=1)
-                result_generation = self._result_generation
+                # Kuyruktan alınan ses ile nesli birlikte yakala; araya clear giremesin.
+                with self._lifecycle_lock:
+                    audio_data = self.audio_queue.get_nowait()
+                    result_generation = self._result_generation
 
                 # Float32'ye çevir
                 audio_float = audio_data.astype(np.float32) / 32768.0
@@ -3961,21 +3999,7 @@ class WhisperWebTranscriber:
                         or not self.is_running):
                     continue
                 
-                # Metni birleştir ve temizle
-                full_text = ""
-                for segment in segments:
-                    text = segment.text.strip()
-                    if text:
-                        if full_text and not full_text[-1] in '.!?':
-                            full_text += ". "
-                        full_text += text + " "
-                
-                full_text = full_text.strip()
-
-                # Basit düzeltmeler
-                full_text = full_text.replace("  ", " ")
-                full_text = full_text.replace(" .", ".")
-                full_text = full_text.replace(" ,", ",")
+                full_text = _join_transcription_segments(segments)
 
                 # Tani: bir segment islendi; whisper bos mu dondu, dolu mu?
                 dur = len(audio_data) / float(self.RATE)
@@ -4099,7 +4123,11 @@ class WhisperWebTranscriber:
                         has_key = bool(translation_request.get('deepl_api_key'))
                     # Mic dikte modunda kullanici duz metin istiyor: otomatik ceviri yok.
                     if (self.capture_mode != 'mic'
-                            and translation_request['enabled'] and has_key):
+                            and translation_request['enabled'] and has_key
+                            and translation_request['source_lang'] != translation_request['target_lang']):
+                        transcription['translation_status'] = 'pending'
+                        socketio.emit('transcription_translation_status', {
+                            'id': transcription['id'], 'status': 'pending'})
                         # En son cevrilmek uzere gonderilen id (backlog atlama kontrolu icin)
                         self._latest_translate_submit_id = transcription['id']
                         self._latest_translate_sequence += 1
@@ -4144,6 +4172,7 @@ class WhisperWebTranscriber:
             except queue.Empty:
                 if commit_lock_held:
                     self._lifecycle_lock.release()
+                time.sleep(0.02)
                 continue
             except Exception as e:
                 if commit_lock_held:
@@ -4160,7 +4189,7 @@ class WhisperWebTranscriber:
                 except Exception:
                     logger.warning('Transkripsiyon hata bildirimi iletilemedi')
 
-    def _transcribe_partial(self, audio_data, session_id, utterance_seq):
+    def _transcribe_partial(self, audio_data, session_id, utterance_seq, result_generation=None):
         """Kismi (canli onizleme) transkripsiyon. Konusma birikirken buffer'in anlik
         kopyasini hizli/ham transkribe edip 'partial_transcription' ile yayar.
 
@@ -4174,6 +4203,9 @@ class WhisperWebTranscriber:
         onizlemesi hayalet gibi geri gelirdi."""
         model_lock_acquired = False
         try:
+            if (result_generation is not None
+                    and result_generation != self._result_generation):
+                return
             if session_id != self._session_id or self.current_model is None:
                 return
             if utterance_seq != self._utterance_seq:
@@ -4209,7 +4241,7 @@ class WhisperWebTranscriber:
                     language=whisper_lang,
                     vad_filter=False,
                 )
-                text = " ".join(s.text.strip() for s in segments if s.text.strip()).strip()
+                text = _join_transcription_segments(segments)
             finally:
                 self._model_lock.release()
                 model_lock_acquired = False
@@ -4227,6 +4259,8 @@ class WhisperWebTranscriber:
             with self._lifecycle_lock:
                 if (session_id != self._session_id
                         or utterance_seq != self._utterance_seq
+                        or (result_generation is not None
+                            and result_generation != self._result_generation)
                         or not self.is_running):
                     return
                 normalized_text = text.replace("  ", " ").strip()
@@ -4254,6 +4288,18 @@ class WhisperWebTranscriber:
             # bayragini sifirlamasin -> yoksa yeni oturum fazladan partial submit eder.
             if session_id == self._session_id:
                 self._partial_inflight = False
+
+    def _set_translation_status(self, transcription_id, status, session_id, result_generation):
+        """Çeviri bekleyişi/hatası hem geçmişte hem canlı ekranda görünür olsun."""
+        with self._lifecycle_lock:
+            if (session_id != self._session_id or result_generation != self._result_generation):
+                return
+            for record in list(self.transcriptions):
+                if record.get('id') == transcription_id:
+                    record['translation_status'] = status
+                    socketio.emit('transcription_translation_status', {
+                        'id': transcription_id, 'status': status})
+                    return
 
     def _translate_async(
             self, transcription_id, text, request_snapshot,
@@ -4283,9 +4329,11 @@ class WhisperWebTranscriber:
             logger.debug(
                 f"Ceviri atlandi (backlog): id={transcription_id}, son={self._latest_translate_submit_id}"
             )
+            self._set_translation_status(transcription_id, 'skipped', session_id, result_generation)
             return
         translation_lock_held = False
         try:
+            self._set_translation_status(transcription_id, 'translating', session_id, result_generation)
             translation_started = time.perf_counter()
             translation = self.translator.translate(
                 text,
@@ -4294,6 +4342,7 @@ class WhisperWebTranscriber:
             translation_elapsed_ms = (time.perf_counter() - translation_started) * 1000.0
             self._record_latency('translation', translation_elapsed_ms)
             if not translation:
+                self._set_translation_status(transcription_id, 'failed', session_id, result_generation)
                 return
             # Istek gonderilirken guncel olsa bile yavas saglayici donene kadar
             # konusma ilerlemis olabilir. Artik alakasiz kalan sonucu UI'ya basma.
@@ -4302,6 +4351,7 @@ class WhisperWebTranscriber:
                     f"Gec donen ceviri atlandi: id={transcription_id}, "
                     f"son={self._latest_translate_submit_id}"
                 )
+                self._set_translation_status(transcription_id, 'skipped', session_id, result_generation)
                 return
             self._lifecycle_lock.acquire()
             translation_lock_held = True
@@ -4316,6 +4366,7 @@ class WhisperWebTranscriber:
             for tr in list(self.transcriptions):
                 if tr.get('id') == transcription_id:
                     tr['translation'] = translation
+                    tr['translation_status'] = 'done'
                     break
             socketio.emit('transcription_translation', {
                 'id': transcription_id,
@@ -4330,6 +4381,7 @@ class WhisperWebTranscriber:
             if translation_lock_held:
                 self._lifecycle_lock.release()
             _record_health_error('translation_failed')
+            self._set_translation_status(transcription_id, 'failed', session_id, result_generation)
             logger.error(f"Async çeviri hatasi: {e}", exc_info=True)
 
 # Global transcriber instance
@@ -4765,12 +4817,7 @@ def process_mic_audio(
             )
             segments = list(segments)  # cozumlemeyi kilit altinda tamamla
 
-        full_text = ""
-        for segment in segments:
-            text = segment.text.strip()
-            if text:
-                full_text += text + " "
-        full_text = full_text.strip()
+        full_text = _join_transcription_segments(segments)
 
         if not full_text or transcriber._is_likely_hallucination(full_text):
             logger.warning("Mic audio transcribed as empty or hallucination")
@@ -5031,6 +5078,8 @@ def clear_transcriptions():
     # doldurmasin. Yakalama aciksa sonraki sesler yeni nesille normal devam eder.
     with transcriber._lifecycle_lock:
         transcriber._result_generation += 1
+        transcriber._utterance_seq += 1
+        transcriber.flush_now = False
         transcriber.transcriptions.clear()  # deque'u maxlen ozelligi koruyarak temizle
         transcriber.stats['total_transcriptions'] = 0
         transcriber.context_buffer.clear()  # Context buffer'ı da temizle
@@ -5726,6 +5775,15 @@ def ai_chat():
     -> {success, response}"""
     data = request.json or {}
     action = data.get('action')
+    if action not in ('summary', 'question'):
+        return jsonify({'success': False, 'error': 'Bilinmeyen action'}), 400
+    question = data.get('question', '')
+    if action == 'question':
+        if not isinstance(question, str) or not question.strip():
+            return jsonify({'success': False, 'error': 'Soru metin olmalı ve boş olmamalı'}), 400
+        question = question.strip()[:1000]
+    else:
+        question = ''
 
     if not transcriber.openai_responder.api_key:
         return jsonify({'success': False, 'error': 'OpenAI API anahtari gerekli'})
@@ -5742,7 +5800,8 @@ def ai_chat():
     context_text = "\n".join(recent)
 
     ai_slot, busy_response = _begin_ai_request(
-        f'chat:{action}', context_text, data.get('request_id')
+        f'chat:{action}', json.dumps([context_text, question], ensure_ascii=False),
+        data.get('request_id')
     )
     if busy_response:
         return busy_response
@@ -5753,21 +5812,11 @@ def ai_chat():
                 "Sadece ozeti ver, aciklama yazma:\n\n" + context_text
             )
         elif action == 'question':
-            question = (data.get('question') or '').strip()
-            if not question:
-                return jsonify({'success': False, 'error': 'Soru gerekli'})
-            # Asiri uzun soruyu kirp (bellek/API maliyeti)
-            if len(question) > 1000:
-                logger.warning(f"ai_chat: soru {len(question)} karakter, 1000'e kirpildi")
-                question = question[:1000]
             result = transcriber.openai_responder.answer_question(
                 "Asagidaki konusma transkriptine dayanarak soruyu Turkce yanitla. "
                 "Cevap transkriptte yoksa bunu belirt.\n\nTRANSKRIPT:\n" + context_text +
                 "\n\nSORU: " + question
             )
-        else:
-            return jsonify({'success': False, 'error': 'Bilinmeyen action'})
-
         if result and result.get('response'):
             return jsonify({'success': True, 'response': result['response']})
         return jsonify({'success': False, 'error': 'AI yaniti alinamadi'})

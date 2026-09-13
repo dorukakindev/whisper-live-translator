@@ -1565,6 +1565,7 @@
                 <div class="header-live-state" id="connectionState" role="status" aria-live="polite">Bağlanıyor</div>
                 <button class="btn" id="controlsToggleBtn" type="button" aria-controls="controlPanel"
                     aria-expanded="true" onclick="toggleControlPanel()" title="Ayar panelini daralt">
+                    <span class="header-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg></span>
                     <span class="header-action-label">Ayarlar</span>
                 </button>
                 <button class="btn" id="pauseBtn" onclick="togglePause()" disabled>
@@ -2037,7 +2038,10 @@
                         <span style="font-size: 12px; transition: transform 0.3s;">▼</span>
                     </h3>
                     <div class="ai-settings-content">
-                        <div id="favoritesEmpty" style="font-size: 12px; color: var(--text-muted); padding: 4px 0;">
+                        <input type="search" id="favoritesSearch" aria-label="Kalıp cevaplarda ara"
+                            placeholder="Cümle, anlam veya okunuş ara…" oninput="renderFavorites()"
+                            style="width:100%; margin-bottom:10px;">
+                        <div id="favoritesEmpty" role="status" style="font-size: 12px; color: var(--text-muted); padding: 4px 0;">
                             Henüz kalıp yok. Cevap önerilerinin yanındaki ⭐ butonuyla sık kullandığın cümleleri buraya kaydet.
                         </div>
                         <div id="favoritesList" style="max-height: 340px; overflow-y: auto;"></div>
@@ -2333,7 +2337,7 @@
             <!-- Sağ Panel - Transcriptions -->
             <div class="card transcription-area">
                 <div class="transcription-controls">
-                    <h2>Transkripsiyon ve Çeviri</h2>
+                    <h2>Canlı konuşma</h2>
                     <div style="display: flex; gap: 8px;">
                         <button class="btn btn-secondary" onclick="quickReset()" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.25);" title="Sistem hafızasını ve takılan transkripsiyon döngülerini temizler.">
                             Sıfırla
@@ -2351,11 +2355,11 @@
                 </div>
 
                 <div style="margin-bottom: 8px; position: relative;">
-                    <input type="text" id="transcriptSearchInput" placeholder="Transkriptte ara… Enter ile tüm geçmişte ara"
+                    <input type="text" id="transcriptSearchInput" aria-label="Konuşmalarda ara" placeholder="Konuşmalarda ara…"
                         oninput="filterVisibleTranscriptions(this.value)"
                         onkeydown="if (event.key === 'Enter') searchFullTranscriptHistory(this.value)"
                         style="width: 100%; padding: 8px 10px; font-size: 13px; box-sizing: border-box;">
-                    <div style="display:grid; grid-template-columns:minmax(130px, .7fr) minmax(150px, 1fr) auto; gap:6px; margin-top:6px;">
+                    <div class="transcript-history-filters">
                         <label class="sr-only" for="transcriptDateFilter">Tarih filtresi</label>
                         <input type="date" id="transcriptDateFilter" aria-label="Tarih filtresi">
                         <label class="sr-only" for="transcriptSpeakerFilter">Konuşmacı filtresi</label>
@@ -2373,7 +2377,8 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                         </svg>
-                        <p>Henüz kayıt yok</p>
+                        <p class="empty-state-title">Konuşmaya hazır olun</p>
+                        <p class="empty-state-description">Ses kaynağını hazırlayın. Konuşmalar ve çevirileri burada belirsin.</p>
                         <div class="setup-checklist" aria-label="Kurulum kontrol listesi">
                             <button type="button" class="setup-step" id="setupModel"
                                 data-ready="false" data-setup-target="model">Model seç ve yükle</button>
@@ -2398,9 +2403,9 @@
 
                     <div class="ai-question-bar">
                         <input type="text" class="ai-question-input" id="aiQuestionInput"
-                            placeholder="Konuşma hakkında soru sorun... (örn: 'Ana konular nelerdi?', 'Ne konuştuk?')"
+                            aria-label="Konuşma hakkında soru" placeholder="Konuşma hakkında bir soru sorun…"
                             onkeypress="if(event.key === 'Enter') askQuestion()">
-                        <button class="ai-ask-btn" onclick="askQuestion()">
+                        <button class="ai-ask-btn" id="aiAskBtn" onclick="askQuestion()">
                             Sor
                         </button>
                     </div>
@@ -3443,6 +3448,7 @@
                 stopTimer();
                 clearPartialPreview();
                 invalidateReplyCockpit('Bağlantı yeniden kuruluyor.');
+                invalidateAiChat();
                 updateCockpitStatus();
                 showAlert('🔌 Sunucu bağlantısı koptu — yeniden bağlanılıyor...', 'warning');
             });
@@ -3529,6 +3535,13 @@
                 if (item) {
                     appendInlineTranslationToItem(item, data.translation, data.target_lang);
                 }
+            });
+
+            socket.on('transcription_translation_status', (data) => {
+                if (!data || data.id == null) return;
+                const item = Array.from(document.querySelectorAll('[data-transcription-id]'))
+                    .find(node => node.dataset.transcriptionId === String(data.id));
+                if (item) updateTranscriptTranslationStatus(item, data.status);
             });
 
             // PTT ve hydration ayni kimlik/budama sozlesmesini kullanir.
@@ -4082,13 +4095,14 @@
             const list = document.getElementById('transcriptionList');
             const idKey = String(data.id);
             if (seenTranscriptionIds.has(idKey)) {
-                if (data.translation) {
+                if (data.translation || data.translation_status) {
                     const existing = Array.from(
                         list.querySelectorAll('.transcription-item[data-transcription-id]')
                     ).find(el => el.dataset.transcriptionId === idKey);
                     if (existing) {
-                        transcriptionTexts[idKey] = data.text;
-                        appendInlineTranslationToItem(existing, data.translation, data.target_lang);
+                        if (typeof data.text === 'string') transcriptionTexts[idKey] = data.text;
+                        if (data.translation) appendInlineTranslationToItem(existing, data.translation, data.target_lang);
+                        else updateTranscriptTranslationStatus(existing, data.translation_status);
                     }
                 }
                 return;
@@ -4259,6 +4273,7 @@
             // render riski) yol aciyordu.
 
             insertTranscriptionById(list, item, data.id);
+            if (!data.translation) updateTranscriptTranslationStatus(item, data.translation_status);
             pruneTranscriptionList(list);  // DOM item limiti kontrolü - performance için
 
             // Toplam sayıyı güncelle
@@ -4315,6 +4330,7 @@
                     }
                     resetTokenCounter();
                     invalidateReplyCockpit('Geçmiş temizlendi.');
+                    invalidateAiChat();
                     showAlert('Sistem ve hafıza sıfırlandı', 'success');
                 }
             } catch (error) {
@@ -4349,6 +4365,7 @@
                     document.getElementById('contextCount').textContent = '0';
                     resetTokenCounter();
                     invalidateReplyCockpit('Geçmiş temizlendi.');
+                    invalidateAiChat();
                     showAlert('Kayıtlar temizlendi', 'success');
                 }
             } catch (error) {
@@ -5221,7 +5238,7 @@
             speechSynthesis.onvoiceschanged = refreshTtsVoices;
         }
         const _ttsWarnedLangs = new Set();  // dil basina bir kez uyar, her tiklamada spam etme
-        function speakText(text, lang) {
+        function speakText(text, lang, rate = 0.9) {
             if (!window.speechSynthesis) {
                 showAlert('❌ Tarayıcı sesli okumayı desteklemiyor', 'error');
                 return;
@@ -5251,7 +5268,7 @@
             const utter = new SpeechSynthesisUtterance(cleaned);
             utter.lang = bcp;
             if (voice) utter.voice = voice;
-            utter.rate = 0.9; // anlasilirlik icin hafif yavas
+            utter.rate = Number.isFinite(Number(rate)) ? Math.min(1.2, Math.max(0.5, Number(rate))) : 0.9;
             speechSynthesis.speak(utter);
         }
 
@@ -5325,7 +5342,14 @@
         function loadFavorites() {
             try {
                 const favs = JSON.parse(whisperStorage.getItem(FAVORITES_KEY));
-                return Array.isArray(favs) ? favs : [];
+                if (!Array.isArray(favs)) return [];
+                return favs.filter(f => f && typeof f.translation === 'string' && f.translation.trim())
+                    .slice(0, 100).map(f => ({
+                        translation: f.translation.trim(),
+                        turkish: typeof f.turkish === 'string' ? f.turkish : '',
+                        romanized: typeof f.romanized === 'string' ? f.romanized : '',
+                        lang: typeof f.lang === 'string' ? f.lang : ''
+                    }));
             } catch (e) { return []; }
         }
         function persistFavorites(favs) {
@@ -5345,8 +5369,13 @@
             persistFavorites(favs);
             showAlert('⭐ Kalıp cevaplara eklendi', 'success');
         }
-        function deleteFavorite(index) {
+        function deleteFavorite(index, translation, lang) {
             const favs = loadFavorites();
+            // Liste başka pencerede değişmişse eski sıra numarasıyla yanlış kaydı silme.
+            if (typeof translation === 'string') {
+                index = favs.findIndex(f => f.translation === translation && f.lang === (lang || ''));
+            }
+            if (!Number.isInteger(index) || index < 0 || index >= favs.length) return;
             favs.splice(index, 1);
             persistFavorites(favs);
         }
@@ -5384,11 +5413,17 @@
             const list = document.getElementById('favoritesList');
             if (!list) return;
             const favs = loadFavorites();
+            const query = (document.getElementById('favoritesSearch')?.value || '').trim().toLocaleLowerCase('tr-TR');
+            const matches = favs.map((f, i) => ({f, i})).filter(({f}) =>
+                [f.translation, f.turkish, f.romanized, f.lang].some(value => value.toLocaleLowerCase('tr-TR').includes(query)));
             const empty = document.getElementById('favoritesEmpty');
-            if (empty) empty.style.display = favs.length ? 'none' : 'block';
+            if (empty) {
+                empty.style.display = matches.length ? 'none' : 'block';
+                empty.textContent = favs.length ? 'Aramanıza uygun kalıp bulunamadı.' : 'Henüz kalıp yok. Cevap kartındaki Kalıplara kaydet düğmesiyle bir cümle ekleyin.';
+            }
             const countEl = document.getElementById('favoritesCount');
             if (countEl) countEl.textContent = favs.length ? `(${favs.length})` : '';
-            list.innerHTML = favs.map((f, i) => `
+            list.innerHTML = matches.map(({f, i}) => `
                 <div class="mini-card" style="padding:8px;">
                     <div style="font-weight:600; font-size:13px;">${escapeHtml(f.translation)}</div>
                     ${f.turkish ? `<div style="opacity:0.75; font-size:11.5px; margin-top:2px;">${escapeHtml(f.turkish)}</div>` : ''}
@@ -5397,7 +5432,7 @@
                         <button class="copy-btn" style="margin:0;" title="Sesli dinle" onclick="speakText('${escapeJsString(f.translation)}', '${escapeJsString(f.lang || '')}')">🔊</button>
                         ${f.romanized ? `<button class="copy-btn" style="margin:0;" title="Büyük puntoyla göster" onclick="openReadingMode('${escapeJsString(f.romanized)}', '${escapeJsString(f.translation)}', '${escapeJsString(f.turkish || '')}', '${escapeJsString(f.lang || '')}')">🔍</button>` : ''}
                         <button class="copy-btn" style="margin:0;" title="Kopyala" onclick="copyResponseText('${escapeJsString(f.translation)}')">📋</button>
-                        <button class="copy-btn" style="margin:0;" title="Kalıplardan sil" onclick="deleteFavorite(${i})">🗑️</button>
+                        <button class="copy-btn" style="margin:0;" title="Kalıplardan sil" onclick="deleteFavorite(${i}, '${escapeJsString(f.translation)}', '${escapeJsString(f.lang)}')">🗑️</button>
                     </div>
                 </div>
             `).join('');
@@ -5426,8 +5461,30 @@
             return select.options[select.selectedIndex]?.textContent || select.value.toUpperCase();
         }
 
+        function updateTranscriptTranslationStatus(item, status) {
+            const labels = {
+                pending: 'Çeviri sırada…', translating: 'Çevriliyor…',
+                skipped: 'Akışı güncel tutmak için çeviri atlandı. Çevir düğmesiyle isteyebilirsiniz.',
+                failed: 'Çeviri alınamadı. Çevir düğmesiyle yeniden deneyebilirsiniz.'
+            };
+            let note = item.querySelector('.translation-status-note');
+            if (!Object.hasOwn(labels, status) || item.querySelector('.transcription-translation')) {
+                note?.remove();
+                return;
+            }
+            if (!note) {
+                note = document.createElement('div');
+                note.className = 'translation-status-note';
+                note.setAttribute('role', 'status');
+                item.querySelector('.transcription-original')?.insertAdjacentElement('afterend', note);
+            }
+            note.dataset.state = status;
+            note.textContent = labels[status];
+        }
+
         function appendInlineTranslationToItem(item, translatedText, targetLangCode) {
             if (!item || !translatedText) return;
+            item.querySelector('.translation-status-note')?.remove();
 
             let translationDiv = item.querySelector('.transcription-translation');
             if (!translationDiv) {
@@ -5519,106 +5576,81 @@
             }
         }
 
-        // AI Chat Asistan Fonksiyonları
-        async function getSummary() {
-            const btn = document.getElementById('summaryBtn');
-            const resultDiv = document.getElementById('aiChatResult');
-            const resultHeader = document.getElementById('aiChatResultHeader');
-            const resultText = document.getElementById('aiChatResultText');
+        // Özet ve soru aynı sonuç alanını paylaşır; tek istek sahibi tutulur.
+        let _aiChatRequest = null;
 
-            // En az 1 transcription olmalı
-            const transcriptions = document.querySelectorAll('.transcription-item');
-            if (transcriptions.length === 0) {
-                showAlert('❌ Henüz kayıt yok', 'error');
-                return;
+        function setAiChatBusy(busy) {
+            for (const id of ['summaryBtn', 'aiAskBtn']) {
+                const button = document.getElementById(id);
+                if (button) button.disabled = busy;
             }
-
-            // Butonu devre dışı bırak
-            btn.disabled = true;
-            btn.textContent = '⏳ Özet hazırlanıyor...';
-
-            try {
-                const response = await fetch('/api/ai_chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'summary'
-                    })
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    resultHeader.textContent = '📊 Konuşma Özeti:';
-                    resultText.textContent = data.response;
-                    resultDiv.classList.add('visible');
-                } else {
-                    showAlert(data.error || '❌ Özet alınamadı', 'error');
-                }
-            } catch (error) {
-                showAlert('❌ Bağlantı hatası', 'error');
-            } finally {
-                btn.disabled = false;
-                btn.textContent = '📊 Özet Al';
-            }
+            document.getElementById('aiChatResult')?.setAttribute('aria-busy', String(busy));
         }
 
-        async function askQuestion() {
+        function invalidateAiChat() {
+            const pending = _aiChatRequest;
+            _aiChatRequest = null;
+            pending?.controller.abort();
+            if (pending) clearTimeout(pending.timer);
+            setAiChatBusy(false);
+            document.getElementById('aiChatResult').classList.remove('visible');
+            document.getElementById('aiChatResultText').textContent = '';
+        }
+
+        async function runAiChat(action) {
+            if (_aiChatRequest) return;
             const input = document.getElementById('aiQuestionInput');
-            const question = input.value.trim();
+            const submittedValue = input.value;
+            const question = submittedValue.trim();
+            if (action === 'question' && !question) {
+                showAlert('Lütfen bir soru yazın', 'warning');
+                return;
+            }
+            if (!document.querySelector('#transcriptionList .transcription-item[data-transcription-id]')) {
+                showAlert('Henüz kayıt yok', 'warning');
+                return;
+            }
             const resultDiv = document.getElementById('aiChatResult');
             const resultHeader = document.getElementById('aiChatResultHeader');
             const resultText = document.getElementById('aiChatResultText');
-
-            if (!question) {
-                showAlert('❌ Lütfen bir soru yazın', 'error');
-                return;
-            }
-
-            // En az 1 transcription olmalı
-            const transcriptions = document.querySelectorAll('.transcription-item');
-            if (transcriptions.length === 0) {
-                showAlert('❌ Henüz kayıt yok', 'error');
-                return;
-            }
-
-            // Çift gönderimi engelle: Enter'a hızlı çift basışta veya butona tekrar
-            // tıklandığında ikinci paralel istek ilkini ezmesin (yükleme kilidi).
-            if (window._askInFlight) return;
-            window._askInFlight = true;
-
-            // Loading göster
-            resultHeader.textContent = '💭 AI düşünüyor...';
+            const pending = {controller: new AbortController(), timer: null};
+            _aiChatRequest = pending;
+            pending.timer = setTimeout(() => pending.controller.abort(), 45000);
+            setAiChatBusy(true);
+            resultHeader.textContent = action === 'summary' ? 'Özet hazırlanıyor…' : 'AI düşünüyor…';
             resultText.textContent = '';
             resultDiv.classList.add('visible');
-
             try {
                 const response = await fetch('/api/ai_chat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'question',
-                        question: question
-                    })
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(action === 'summary' ? {action} : {action, question}),
+                    signal: pending.controller.signal
                 });
-
                 const data = await response.json();
-
-                if (data.success) {
-                    resultHeader.textContent = '💬 AI Cevabı:';
-                    resultText.textContent = data.response;
-                    input.value = '';  // Inputu temizle
-                } else {
-                    resultHeader.textContent = '❌ Hata:';
-                    resultText.textContent = data.error || 'Cevap alınamadı';
-                }
+                if (_aiChatRequest !== pending) return;
+                if (!response.ok || !data.success) throw new Error(data.error || 'Cevap alınamadı');
+                resultHeader.textContent = action === 'summary' ? 'Konuşma özeti' : 'AI cevabı';
+                resultText.textContent = data.response;
+                // İstek sürerken yazılan sonraki soruyu koru.
+                if (action === 'question' && input.value === submittedValue) input.value = '';
             } catch (error) {
-                resultHeader.textContent = '❌ Bağlantı Hatası';
-                resultText.textContent = error.message;
+                if (_aiChatRequest !== pending) return;
+                resultHeader.textContent = 'İstek tamamlanamadı';
+                resultText.textContent = error.name === 'AbortError'
+                    ? 'Yanıt süresi doldu. Tekrar deneyebilirsiniz.'
+                    : (error.message || 'Bağlantıyı kontrol edip tekrar deneyin.');
             } finally {
-                window._askInFlight = false;
+                clearTimeout(pending.timer);
+                if (_aiChatRequest === pending) {
+                    _aiChatRequest = null;
+                    setAiChatBusy(false);
+                }
             }
         }
+
+        async function getSummary() { return runAiChat('summary'); }
+        async function askQuestion() { return runAiChat('question'); }
 
         function regenerateAnswer(id, btn) {
             // Ayni mesaj icin yeni cevap onerileri uret (mevcut kutu yenisiyle degisir)

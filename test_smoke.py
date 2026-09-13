@@ -809,6 +809,81 @@ def test_transcription_id_survives_clear():
 
 
 # ── 6. Ceviri backlog atlama ───────────────────────────────────────
+def test_segment_join_and_speech_onset():
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    from contextlib import ExitStack
+
+    join = lambda parts: buyedektir._join_transcription_segments(
+        SimpleNamespace(text=part) for part in parts
+    )
+    check(join(['Bugün', 'toplantıya gelemem.']) == 'Bugün toplantıya gelemem.',
+          'Whisper parça sınırı cümleyi bölmemeli')
+    check(join(['Merhaba.', 'Nasılsın?']) == 'Merhaba. Nasılsın?',
+          'model noktalaması korunmalı')
+    check(join([' ', 'Hello', ',', 'world!']) == 'Hello, world!',
+          'boş parça ve ayrı noktalama birleştirilmedi')
+    check(join(['こんにちは', '。']) == 'こんにちは。', 'Japonca noktalama ayrıldı')
+
+    t = buyedektir.transcriber
+    np = buyedektir.np
+    # 12 sessiz kareden yalnız son 6 kare (180 ms) konuşmaya eklenmeli.
+    frames = iter(list(range(1, 13)) + [100, 101, 102] + list(range(20, 28)))
+    captured = []
+
+    class Stream:
+        def read(self, count, **kwargs):
+            try:
+                value = next(frames)
+            except StopIteration:
+                t.is_running = False
+                value = 0
+            return np.full(count, value, dtype=np.int16).tobytes()
+
+        def stop_stream(self):
+            pass
+
+        def close(self):
+            pass
+
+    stream = Stream()
+    audio = SimpleNamespace(open=lambda **kwargs: stream, terminate=lambda: None)
+    with ExitStack() as stack:
+        for name, value in {
+                'is_running': True, '_session_id': 888, 'is_paused': False,
+                'ptt_active': False, 'flush_now': False, 'partial_enabled': False,
+                'silence_duration': 0.09, '_utterance_seq': 0,
+                '_active_audio_stream': None, '_active_audio_p': None}.items():
+            stack.enter_context(patch.object(t, name, value))
+        stack.enter_context(patch.object(buyedektir.pyaudio, 'PyAudio', return_value=audio))
+        stack.enter_context(patch.object(t, '_resolve_capture_device', return_value=(0, {
+            'maxInputChannels': 1, 'defaultSampleRate': 16000, 'name': 'Test'})))
+        stack.enter_context(patch.object(t, '_enqueue_audio', side_effect=lambda data, *args: captured.append(data.copy())))
+        stack.enter_context(patch.object(buyedektir, '_vad_is_speech', side_effect=lambda vad, data, rate: data[0] >= 100))
+        stack.enter_context(patch.object(buyedektir.socketio, 'emit'))
+        t._capture_audio(0, 888)
+    check(len(captured) == 1, f'konuşma tek parça olmalı: {len(captured)}')
+    if captured:
+        check(captured[0][::480].tolist() == [7, 8, 9, 10, 11, 12, 100, 101, 102, 20, 21, 22],
+              f'konuşma başlangıcı kayıp veya eski sessizlik sınırsız: {captured[0][::480].tolist()}')
+
+
+def test_clear_capture_generation():
+    from unittest.mock import patch
+    t = buyedektir.transcriber
+    with patch.object(t, 'audio_queue', _queue_mod.Queue()), \
+            patch.object(t, '_session_id', 333), \
+            patch.object(t, '_result_generation', 12):
+        t._enqueue_audio('eski ses', 333, 11)
+        t._enqueue_audio('eski oturum', 332, 12)
+        check(t.audio_queue.empty(), 'eski ses sıfırlanmış kuyruğa eklendi')
+        t._enqueue_audio('yeni ses', 333, 12)
+        check(t.audio_queue.get_nowait() == 'yeni ses', 'güncel ses kayboldu')
+        with patch.object(t, 'current_model') as model:
+            t._transcribe_partial(buyedektir.np.zeros(480), 333, t._utterance_seq, 11)
+            check(not model.transcribe.called, 'eski önizleme modele gönderildi')
+
+
 def test_translation_backlog():
     t = buyedektir.transcriber
     saved_sess = t._session_id
@@ -845,6 +920,18 @@ def test_translation_backlog():
               f"ceviri socket olayi eksik/tekrarli: {translation_events}")
         check([record.get('translation') for record in t.transcriptions] == ['x', 'x'],
               f"bellek ceviri guncellemesi yanlis: {list(t.transcriptions)}")
+        check(all(record.get('translation_status') == 'done' for record in t.transcriptions),
+              'tamamlanan çevirilerin durumu kaydedilmedi')
+        t.transcriptions.append({'id': 90, 'text': 'eski'})
+        t._translate_async(90, 'eski', request_snapshot, session_id=1, result_generation=7)
+        check(t.transcriptions[-1]['translation_status'] == 'skipped', 'atlanmış çeviri görünür değil')
+        t.translator.translate = lambda *args, **kwargs: None
+        t._translate_async(100, 'hata', request_snapshot, session_id=1, result_generation=7)
+        check(t.transcriptions[1]['translation_status'] == 'failed', 'başarısız çeviri bekliyor görünüyor')
+        event_count = len(emitted)
+        t._set_translation_status(100, 'pending', 999, 7)
+        check(len(emitted) == event_count and t.transcriptions[1]['translation_status'] == 'failed',
+              'eski oturum çeviri durumunu değiştirdi')
     finally:
         t._session_id = saved_sess
         t._result_generation = saved_generation
@@ -1160,6 +1247,35 @@ def test_ai_request_rate_limit():
         finally:
             for slot in slots:
                 buyedektir._finish_ai_request(slot)
+
+
+def test_ai_chat_validation_and_identity():
+    from unittest.mock import patch
+    client = make_client()
+    for question in (None, [], {}, 7, True, '', '   '):
+        response = client.post('/api/ai_chat', json={'action': 'question', 'question': question})
+        check(response.status_code == 400, f'ai_chat gecersiz soru reddedilmedi: {question!r}')
+    check(client.post('/api/ai_chat', json={'action': []}).status_code == 400,
+          'ai_chat gecersiz action reddedilmedi')
+    responder = buyedektir.transcriber.openai_responder
+    identities = []
+    original_begin = buyedektir._begin_ai_request
+
+    def capture_identity(kind, text, request_id=''):
+        identities.append(text)
+        return original_begin(kind, text, request_id)
+
+    with patch.object(responder, 'api_key', 'test-only'), \
+            patch.object(responder, 'answer_question', return_value={'response': 'Yanıt'}) as answer, \
+            patch.object(buyedektir.transcriber, 'get_transcriptions_snapshot',
+                         return_value=[{'text': 'Toplantı yarın.'}]), \
+            patch.object(buyedektir, '_begin_ai_request', side_effect=capture_identity):
+        for question in ('Ne zaman?', 'Nerede?', 'x' * 1100):
+            response = client.post('/api/ai_chat', json={'action': 'question', 'question': question})
+            check(response.status_code == 200 and response.json['success'], 'ai_chat gecerli soru basarisiz')
+        check(identities[0] != identities[1], 'farkli sorular ayni istek saniliyor')
+        check(answer.call_args.args[0].endswith('x' * 1000), 'uzun soru sinirlanmadi')
+        check(not buyedektir._ai_active_keys, 'ai_chat slotu serbest birakilmadi')
 
 
 def test_transkribe_helpers():
@@ -1488,11 +1604,14 @@ def main():
                test_mic_frame_snapshot_and_translation_workers,
                test_diarization_is_late_and_nonblocking,
                test_transcription_id_survives_clear,
+               test_segment_join_and_speech_onset,
+               test_clear_capture_generation,
                test_translation_backlog, test_resample_clip, test_partial_snapshot_cap,
                test_quiet_split_index,
                test_max_utterance_forced_flush, test_max_ptt_forced_flush,
                test_api_token_and_model_load_lock,
                test_ai_request_rate_limit,
+               test_ai_chat_validation_and_identity,
                test_transkribe_helpers,
                test_capture_open_after_stop_is_stale,
                test_ai_config_tests_connection_once,
