@@ -4,6 +4,8 @@ Bu dosya konuşma geçmişi olmadan çalışmaya devam etmek içindir. Önce [AG
 
 ## Kullanıcının çalışma tercihleri
 
+- GitHub bağlantısı gerektiren işlemlerden önce Proxifier’ı kapat. Fetch/push ve uzak HEAD doğrulaması tamamlanınca Proxifier’ı yeniden aç. Kullanıcı Git/curl bağlantısının Proxifier kapalıyken düzeldiğini doğruladı; bu tercih sonraki oturumlarda da geçerlidir.
+
 - Kullanıcı hata bulup düzeltmeni, tasarım ve transkripsiyon/çeviri deneyimini geliştirmeni istiyor. Makul ve geri alınabilir uygulama kararlarında ilerle; yalnız öneri listesi bırakma.
 - Gereken araç, paket ve modelleri çalışmak için indirebilir ve kurabilirsin. Önce mevcut kurulumu kontrol et; gereksiz yeniden kurulum yapma. Python için proje `.venv` ortamını, Node için kilit dosyasını kullan. Resmi dağıtım kaynaklarını kullan; sürüm ve Windows/GPU uyumluluğunu kurulum anındaki resmi belgelerden doğrula.
 - Bu izin ücretli satın alma veya hizmet aboneliği, bilgisayarı formatlama, kişisel verileri silme ya da güvenlik ayarlarını gelişigüzel kapatma izni değildir. Hesap girişini gerektiren adımda kullanıcıdan giriş yapmasını iste; şifre/token isteme, çıktılara dökme.

@@ -85,3 +85,11 @@ Klavye odağı görünürdür; seçili cevap aria-pressed ile belirtilir. Beklem
 | Toast | index.html showAlert | Mevcut bildirim sözleşmesi | success, warning, error | test_cockpit_request.js |
 
 Tek ana görüşme ekranı ve salt okunur yardımcı overlay vardır; veri tablosu/CRUD rota ailesi bulunmadığından ayrı UX-CONTRACT.md üretilmez. Bu tablo mevcut sahipleri kaydeder. Native dialog veya yeni veri saklama politikası eklenmez. Overlay aynı --wp-* tokenlarını alias ile kullanır. Seçenek anahtarları, onay/ret kararları ve ağ hatalarının sahipleri mevcut API akışıdır.
+
+## Görüşme araçları
+
+Kullanıcının istediği dört araç ana ekrana eklendi. Kendi cevabını yaz veya söyle bölümü native details ile açılır; sonuç aynı açık okunuş kartına gelir. Bölüm başlangıçta kapalıdır, böylece canlı cevap okunurken yazı alanı okunuşu aşağı itmez. Yazılı çeviri başarılıysa bölüm kapanır; taslak bellekte kalır, kalıcı depoya yazılmaz. Ctrl+Enter IME dışında çevirir. Mikrofon düğmesi Alt ile aynı kayıt sıralamasını kullanır; bitirince çevirir, pencere odağı kaybolunca kayıt iptal edilir.
+
+Hızlı kalıplar ayarlardan ana ekrana taşındı. Dile göre mevcut üretilmiş okunuşlar korunur; seçmek ağ isteği yapmadan ortak kartı açar. Dinleme, kopyalama ve kaydetme ortak kartın eylemleridir. Öneri uzunluğu native select ile Kısa/Normal/Detaylı seçilir, yalnız bu tercih yerel depoda saklanır. Hedefler yaklaşık 3–8 / 8–20 / 20–45 kelime olup iki paralel AI isteğine uygulanır; yazılı çeviri metni özetlenmez.
+
+Görüşmeye hazırlık açıldığında model ve AI durumu sunucudan alınır; ses satırı seçili cihazı gösterir, gerçek ses sinyali testi olduğunu iddia etmez. Doğrulanmamış anahtar hazır sayılmaz. Eksik satır ilgili mevcut ayara odaklanır. Yeniden kontrol hata/bekleme durumları yazılıdır. Native details ve select klavye davranışları korunur. Yeni kontrol renkleri mevcut --wp-* tokenlarını kullanır; sağ panel tüm araçlar ve cevap için tek kaydırma sahibidir.
