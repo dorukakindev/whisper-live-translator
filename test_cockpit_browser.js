@@ -104,6 +104,30 @@ app.whenReady().then(async () => {
         return {remembered,finite,focusRestored,blocked:!generated};
     })()`);
     assert.deepStrictEqual(readingChecks, {remembered:true,finite:true,focusRestored:true,blocked:true});
+    const designChecks = await win.webContents.executeJavaScript(`(() => {
+        document.body.classList.add('controls-collapsed');
+        const main = document.querySelector('.transcription-area').getBoundingClientRect();
+        toggleControlPanel();
+        const stableWidth = main.width === document.querySelector('.transcription-area').getBoundingClientRect().width;
+        const close = document.querySelector('.settings-heading button');
+        const closeBox = close.getBoundingClientRect();
+        const closeVisible = closeBox.top >= 0 && closeBox.bottom <= innerHeight;
+        close.focus(); close.click();
+        const returned = document.activeElement.id === 'controlsToggleBtn';
+        const box = document.querySelector('.ai-suggestion-box');
+        const header = box.querySelector('.suggestion-toggle');
+        const headerFits = header.getBoundingClientRect().bottom <= box.getBoundingClientRect().bottom;
+        toggleSuggestionBox(box.id);
+        const expanded = getComputedStyle(box.querySelector('.suggestion-content')).display !== 'none';
+        toggleSuggestionBox(box.id);
+        const details = document.querySelector('.history-disclosure');
+        details.open = true;
+        const filters = details.querySelector('.transcript-history-filters');
+        const filtersVisible = filters.getBoundingClientRect().height > 0;
+        details.open = false;
+        return {stableWidth,returned,headerFits,expanded,filtersVisible,closeVisible};
+    })()`);
+    assert.deepStrictEqual(designChecks, {stableWidth:true,returned:true,headerFits:true,expanded:true,filtersVisible:true,closeVisible:true});
     await win.webContents.executeJavaScript(`toggleLatencyDetails(); window.scrollTo(0, 0); document.querySelector('.control-panel').scrollTop = 0;`);
 
     for (const [width, height] of sizes) {
@@ -141,7 +165,7 @@ app.whenReady().then(async () => {
     }
 
     win.setSize(1440, 900);
-    await win.webContents.executeJavaScript(`document.body.classList.add('light-mode')`);
+    await win.webContents.executeJavaScript(`document.body.classList.add('light-mode', 'controls-collapsed'); updateThemeButton(true)`);
     await new Promise(resolve => setTimeout(resolve, 500));
     fs.writeFileSync(path.join(outputDir, '1440x900-light.png'), (await win.webContents.capturePage()).toPNG());
     await win.webContents.executeJavaScript(`document.body.classList.add('light-mode'); openReadingMode(
@@ -221,6 +245,22 @@ app.whenReady().then(async () => {
         return {pending,failed,skipped,completed};
     })()`);
     assert.deepStrictEqual(translationChecks, {pending:true,failed:true,skipped:true,completed:true});
+    const emptyHtml = fixtureHtml().replace(/<script>\s*window.fetch = async url[\s\S]*?<\/script><\/body>/, '</body>');
+    const emptyPath = path.join(outputDir, 'empty.html');
+    fs.writeFileSync(emptyPath, emptyHtml, 'utf8');
+    await win.loadFile(emptyPath);
+    win.setSize(1440, 900);
+    await win.webContents.executeJavaScript(`whisperStorage.removeItem('controlsCollapsed'); document.body.classList.add('controls-collapsed'); document.body.classList.remove('light-mode'); window.scrollTo(0,0);`);
+    await new Promise(resolve => setTimeout(resolve, 200));
+    fs.writeFileSync(path.join(outputDir, '1440x900-empty.png'), (await win.webContents.capturePage()).toPNG());
+    const setupOpens = await win.webContents.executeJavaScript(`(() => {
+        document.getElementById('setupModel').click();
+        return !document.body.classList.contains('controls-collapsed') && document.activeElement.id === 'modelLoadBtn';
+    })()`);
+    assert(setupOpens, 'Kurulum adımı kapalı ayarları açmalı ve hedefe odaklanmalı');
+    await win.webContents.executeJavaScript(`document.querySelector('.control-panel').scrollTop = 0`);
+    await new Promise(resolve => setTimeout(resolve, 250));
+    fs.writeFileSync(path.join(outputDir, '1440x900-settings.png'), (await win.webContents.capturePage()).toPNG());
     win.close();
     console.log('Gercek Chromium Cockpit davranis ve gorsel testleri gecti:', outputDir);
     app.quit();

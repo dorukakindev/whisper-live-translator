@@ -1858,3 +1858,134 @@ body.light-mode .ai-ask-btn { color: #ffffff; }
         transition-duration: 0.01ms !important;
     }
 }
+/* Konuşma odaklı çalışma alanı: ayarlar akışın genişliğini daraltmaz. */
+:root {
+    --wp-canvas: #101415;
+    --wp-base: #141a1b;
+    --wp-subtle: #1b2323;
+    --wp-surface: #1c2425;
+    --wp-raised: #273232;
+    --wp-input: #141a1b;
+    --wp-border: #303b3b;
+    --wp-border-control: #40504e;
+    --wp-text: #edf3ef;
+    --wp-text-secondary: #b3c0ba;
+    --wp-text-muted: #96a7a0;
+    --wp-accent: #b8d6a2;
+    --wp-accent-hover: #d1e8bf;
+    --wp-accent-soft: rgba(184, 214, 162, .09);
+    --wp-translation: #acc6bd;
+    --wp-shadow-panel: none;
+    --wp-focus-ring: 0 0 0 3px rgba(184, 214, 162, .2);
+}
+body.light-mode {
+    --wp-canvas: #eff1ea;
+    --wp-base: #f7f8f3;
+    --wp-subtle: #edf1e7;
+    --wp-surface: #ffffff;
+    --wp-raised: #e7ecdf;
+    --wp-input: #f7f8f3;
+    --wp-border: #d8dfd2;
+    --wp-border-control: #b6c2ad;
+    --wp-text: #263229;
+    --wp-text-secondary: #4b5c50;
+    --wp-text-muted: #607062;
+    --wp-accent: #496c35;
+    --wp-accent-hover: #355224;
+    --wp-accent-soft: rgba(73, 108, 53, .08);
+    --wp-translation: #456654;
+    --wp-shadow-panel: none;
+}
+.header { min-height: 74px; box-shadow: none; border-color: var(--wp-border); }
+.brand-eyebrow { display: none; }
+.header h1 { font-size: 22px; font-weight: 600; }
+.header .brand-subtitle { margin-top: 5px; }
+.brand-mark { background: var(--wp-accent-soft); border-color: var(--wp-border); box-shadow: none; }
+.cockpit-status { background: transparent; border: 0; margin-top: 8px; }
+.cockpit-status-item { padding: 8px 14px; gap: 3px; border-color: var(--wp-border); }
+.cockpit-status-label { font-size: 9px; letter-spacing: .09em; }
+.cockpit-status-value { font-size: 12px; }
+.cockpit-latency-trigger { min-height: 0; padding: 0; text-align: left; }
+.main-grid, body.controls-collapsed .main-grid {
+    grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr);
+    gap: 20px; padding-top: 12px;
+}
+.section-kicker { display: block; color: var(--wp-text-muted); font-size: 10px; font-weight: 600; letter-spacing: .12em; margin-bottom: 5px; }
+.transcription-area, .reply-cockpit { height: calc(100vh - 160px); min-height: 480px; top: 86px; border-radius: 16px; }
+.transcription-controls { min-height: 84px; padding: 18px 20px; }
+.transcription-controls h2, .reply-cockpit-header h2 { font-size: 20px; font-weight: 600; letter-spacing: -.025em; }
+.transcription-controls h2::before { content: none; }
+.transcription-controls > div:first-child { display: block !important; }
+.transcription-controls .btn { min-height: 32px; padding: 5px 9px; font-size: 11px; }
+.history-disclosure { margin-top: 8px; color: var(--wp-text-muted); font-size: 11px; }
+.history-disclosure summary { width: fit-content; cursor: pointer; padding: 3px 0; }
+.history-disclosure summary:hover { color: var(--wp-text); }
+.transcription-controls + div { background: var(--wp-surface); padding: 12px 20px; }
+.transcription-list { padding: 18px; }
+.transcription-item { padding: 18px; border-radius: 12px; }
+.transcription-original { font-size: 17px; line-height: 1.65; }
+.reply-cockpit-header { padding: 18px 20px; min-height: 84px; }
+.reply-cockpit-header p { margin-top: 9px; line-height: 1.6; }
+.reply-cockpit-progress { border-radius: 20px; padding: 4px 8px; color: var(--wp-accent); background: var(--wp-accent-soft); }
+.reply-cockpit-progress:empty { display: none; }
+.reply-cockpit-options { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 16px; gap: 14px; }
+.reply-option-card { border-left: 1px solid var(--wp-border); padding: 18px; min-height: 250px; gap: 12px; border-radius: 12px; }
+.reply-option-card:first-child { border-color: var(--wp-accent); background: var(--wp-accent-soft); }
+.reply-option-number { color: var(--wp-accent); font-size: 11px; font-weight: 600; }
+.reply-option-language { font-size: 10px; }
+.reply-option-pronunciation { font-size: 23px; line-height: 1.45; letter-spacing: -.02em; font-weight: 600; }
+.reply-option-native { font-size: 13px; }
+.reply-option-meaning { font-size: 13px; padding-bottom: 6px; }
+.reply-option-actions { gap: 7px; }
+.reply-option-actions button { font-size: 10px; padding: 6px 8px; }
+.reply-option-actions .reply-read-button { flex-basis: 100%; min-height: 34px; }
+.reply-cockpit-footer { font-size: 11px; padding: 12px; }
+.ai-chat-container { padding: 14px 20px; }
+body .control-panel {
+    position: fixed; z-index: 150; top: 82px; left: 16px;
+    width: min(360px, calc(100vw - 32px)); height: calc(100dvh - 98px);
+    max-height: none; padding: 16px; gap: 14px;
+    background: var(--wp-base); border: 1px solid var(--wp-border-control);
+    border-radius: 16px; box-shadow: 0 24px 64px rgba(0, 0, 0, .35);
+}
+.settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.settings-heading h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.settings-heading button { background: var(--wp-surface); color: var(--wp-text); border: 1px solid var(--wp-border); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; }
+.control-panel .context-indicator { order: 1; }
+@media (max-width: 1180px) and (min-width: 981px) {
+    .reply-cockpit-options { grid-template-columns: minmax(0, 1fr); }
+    .reply-option-card { min-height: 200px; }
+}
+@media (max-width: 980px) {
+    .main-grid, body.controls-collapsed .main-grid { grid-template-columns: minmax(0, 1fr); }
+    .transcription-area, .reply-cockpit { position: relative; top: auto; height: auto; min-height: 0; }
+    .transcription-list { min-height: 220px; max-height: 45vh; }
+    .reply-cockpit-options { overflow: visible; }
+    .reply-cockpit-empty { min-height: 180px; }
+}
+@media (max-width: 640px) {
+    .header h1 { font-size: 18px; }
+    .cockpit-status-item { padding: 7px 9px; }
+    .cockpit-status-value { font-size: 11px; }
+    .reply-cockpit-options { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+    .reply-option-card { min-height: 0; }
+    .reply-option-pronunciation { font-size: 24px; }
+    .reply-cockpit-header { flex-wrap: wrap; }
+    .transcription-controls { padding: 16px; }
+    body .control-panel { top: 76px; height: calc(100dvh - 90px); }
+}
+/* Kapalı cevap başlığı kesilmeden kalır; ayrıntılar gerektiğinde açılır. */
+.ai-suggestion-box.collapsed { max-height: none; overflow: visible; }
+.ai-suggestion-box.collapsed .suggestion-content { display: none; }
+.settings-heading { position: sticky; top: -16px; z-index: 2; padding: 12px 0; background: var(--wp-base); }
+body.light-mode .btn-primary, body.light-mode .ai-ask-btn,
+body.light-mode .btn-primary:hover:not(:disabled), body.light-mode .ai-ask-btn:hover:not(:disabled) { color: #fff !important; }
+@media (max-width: 640px) {
+    .transcription-controls > div:last-child { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.settings-heading { order: -20; }
+.empty-state { padding: 20px 12px; }
+.empty-state svg { width: 36px; height: 36px; margin-bottom: 12px; }
+.setup-checklist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: min(100%, 440px); }
+.setup-step { text-align: left; font-size: 12px; }
+@media (max-width: 420px) { .setup-checklist { grid-template-columns: minmax(0, 1fr); } }

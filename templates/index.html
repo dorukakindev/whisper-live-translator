@@ -1630,6 +1630,7 @@
         <div class="main-grid">
             <!-- Sol Panel - Kontroller -->
             <div class="card control-panel" id="controlPanel">
+                <div class="settings-heading"><div><span class="section-kicker">ÇALIŞMA ALANI</span><h2>Ses ve dil ayarları</h2></div><button type="button" onclick="toggleControlPanel()" aria-label="Ayarları kapat">✕</button></div>
                 <!-- Context Carry-over Göstergesi -->
                 <div class="context-indicator">
                     <h4>
@@ -2337,7 +2338,7 @@
             <!-- Sağ Panel - Transcriptions -->
             <div class="card transcription-area">
                 <div class="transcription-controls">
-                    <h2>Canlı konuşma</h2>
+                    <div><span class="section-kicker">01 / DİNLE VE ANLA</span><h2>Canlı konuşma</h2></div>
                     <div style="display: flex; gap: 8px;">
                         <button class="btn btn-secondary" onclick="quickReset()" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.25);" title="Sistem hafızasını ve takılan transkripsiyon döngülerini temizler.">
                             Sıfırla
@@ -2359,7 +2360,7 @@
                         oninput="filterVisibleTranscriptions(this.value)"
                         onkeydown="if (event.key === 'Enter') searchFullTranscriptHistory(this.value)"
                         style="width: 100%; padding: 8px 10px; font-size: 13px; box-sizing: border-box;">
-                    <div class="transcript-history-filters">
+                    <details class="history-disclosure"><summary>Geçmişte ayrıntılı ara</summary><div class="transcript-history-filters">
                         <label class="sr-only" for="transcriptDateFilter">Tarih filtresi</label>
                         <input type="date" id="transcriptDateFilter" aria-label="Tarih filtresi">
                         <label class="sr-only" for="transcriptSpeakerFilter">Konuşmacı filtresi</label>
@@ -2367,7 +2368,7 @@
                             onkeydown="if (event.key === 'Enter') searchFullTranscriptHistory(document.getElementById('transcriptSearchInput').value)">
                         <button type="button" class="btn btn-secondary"
                             onclick="searchFullTranscriptHistory(document.getElementById('transcriptSearchInput').value)">Tüm geçmişte ara</button>
-                    </div>
+                    </div></details>
                     <div id="transcriptSearchResults" style="display:none; margin-top:6px; max-height:260px; overflow-y:auto;"></div>
                 </div>
 
@@ -2420,7 +2421,7 @@
             <aside class="card reply-cockpit" id="replyCockpit" aria-labelledby="replyCockpitTitle">
                 <header class="reply-cockpit-header">
                     <div>
-                        <h2 id="replyCockpitTitle">Cevap ve okunuş</h2>
+                        <span class="section-kicker">02 / CEVABINI SESLENDİR</span><h2 id="replyCockpitTitle">Cevap ve okunuş</h2>
                         <p id="replyCockpitSource">Bir transkriptte “Cevap Öner” seçildiğinde seçenekler burada görünür.</p>
                     </div>
                     <span class="reply-cockpit-progress" id="replyCockpitProgress" aria-live="polite"></span>
@@ -2525,6 +2526,7 @@
         document.getElementById('transcriptionList')?.addEventListener('click', event => {
             const step = event.target.closest?.('[data-setup-target]');
             if (!step) return;
+            if (document.body.classList.contains('controls-collapsed')) toggleControlPanel();
             const targetName = step.dataset.setupTarget;
             const target = targetName === 'model' ? document.getElementById('modelLoadBtn')
                 : targetName === 'device' ? document.getElementById('deviceSelect')
@@ -5854,7 +5856,7 @@
                     // metne sahip secenek yeniden acik olarak cizilir.
                     const openReplyTexts = new Set();
                     const closedReplyTexts = new Set();
-                    const wasCollapsed = resultDiv.querySelector('.ai-suggestion-box')?.classList.contains('collapsed');
+                    const wasCollapsed = resultDiv.querySelector('.ai-suggestion-box')?.classList.contains('collapsed') ?? (mode === 'answer');
                     resultDiv.querySelectorAll('.answer-option').forEach(optionEl => {
                         const okDiv = optionEl.querySelector('[id^="ans-"]');
                         if (okDiv && okDiv.style.display === 'block') {
@@ -6001,10 +6003,13 @@
             const captureMode = document.getElementById('captureModeSelect');
             if (captureMode) captureMode.addEventListener('change', updateCockpitStatus);
             const savedControls = whisperStorage.getItem('controlsCollapsed');
-            if (savedControls === 'true' || (savedControls === null && window.innerWidth <= 980)) {
+            if (savedControls !== 'false') {
                 document.body.classList.add('controls-collapsed');
                 const controlsButton = document.getElementById('controlsToggleBtn');
-                if (controlsButton) controlsButton.setAttribute('aria-expanded', 'false');
+                if (controlsButton) {
+                    controlsButton.setAttribute('aria-expanded', 'false');
+                    controlsButton.title = 'Ayar panelini aç';
+                }
             }
             const savedTheme = whisperStorage.getItem('theme') || 'dark'; // Varsayilan: koyu slate
             if (savedTheme === 'light') {

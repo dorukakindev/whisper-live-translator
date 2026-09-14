@@ -72,6 +72,7 @@ function toggleControlPanel() {
         button.title = collapsed ? 'Ayar panelini aç' : 'Ayar panelini daralt';
     }
     whisperStorage.setItem('controlsCollapsed', collapsed ? 'true' : 'false');
+    if (collapsed && document.getElementById('controlPanel')?.contains(document.activeElement)) button?.focus();
 }
 
 function answerStableKey(option) {
@@ -170,6 +171,15 @@ document.addEventListener('keydown', (e) => {
     const btn = document.querySelector('#transcriptionList .transcription-item[data-transcription-id] .ai-answer-btn');
     if (btn) {
         btn.click();
+        e.preventDefault();
+    }
+});
+
+// Ayar paneli kapanınca klavye odağı açıcıya döner.
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !document.body.classList.contains('controls-collapsed')
+        && !document.getElementById('readingOverlay')?.classList.contains('visible')) {
+        toggleControlPanel();
         e.preventDefault();
     }
 });
