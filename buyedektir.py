@@ -4770,7 +4770,7 @@ def _ptt_mic_command(data):
             )
             future = _mic_executor.submit(
                 process_mic_audio, audio_data, target_lang, result_generation,
-                translation_request,
+                translation_request, recording_id,
             )
             future.add_done_callback(lambda _future: _mic_job_slots.release())
             owns_slot = False  # yer artik future tarafindan serbest birakilacak
@@ -4800,14 +4800,14 @@ def _schedule_mic_slot_guard(recording_id):
 
 def process_mic_audio(
         audio_data, target_lang, result_generation=None,
-        translation_request=None):
+        translation_request=None, recording_id=None):
     try:
         if (result_generation is not None
                 and result_generation != transcriber._result_generation):
             return
         if not transcriber.current_model:
             logger.error("No model loaded for mic transcription")
-            socketio.emit('ptt_mic_result', {'success': False, 'error': 'Model yüklü değil'})
+            socketio.emit('ptt_mic_result', {'recording_id': recording_id, 'success': False, 'error': 'Model yüklü değil'})
             return
 
         # Float32 conversion
@@ -4831,7 +4831,7 @@ def process_mic_audio(
 
         if not full_text or transcriber._is_likely_hallucination(full_text):
             logger.warning("Mic audio transcribed as empty or hallucination")
-            socketio.emit('ptt_mic_result', {'success': False, 'error': 'Ses anlaşılamadı'})
+            socketio.emit('ptt_mic_result', {'recording_id': recording_id, 'success': False, 'error': 'Ses anlaşılamadı'})
             return
 
         logger.info(f"Mic transcription: {full_text}")
@@ -4941,6 +4941,7 @@ def process_mic_audio(
 
         # Emit the result
         result = {
+            'recording_id': recording_id,
             'success': True,
             'original': full_text,
             'translation': translation,
@@ -4978,6 +4979,7 @@ def process_mic_audio(
         _record_health_error('mic_transcription_failed')
         logger.error(f"Error processing mic audio: {e}", exc_info=True)
         socketio.emit('ptt_mic_result', {
+            'recording_id': recording_id,
             'success': False,
             'error': 'Mikrofon sesi işlenirken beklenmeyen bir hata oluştu.'
         })
@@ -5205,6 +5207,9 @@ def generate_ai_response():
     mode = data.get('mode', 'answer')  # answer, translate, translate_dual
     target_lang = data.get('target_lang', 'ja')
     tone = data.get('tone', 'arkadasca')
+    response_length = data.get('response_length', 'normal')
+    if response_length not in ('short', 'normal', 'detailed'):
+        return jsonify({'success': False, 'error': 'Geçersiz cevap uzunluğu'}), 400
 
     if not text:
         return jsonify({'success': False, 'error': 'Metin gerekli'})
@@ -5455,13 +5460,21 @@ def generate_ai_response():
             # beklemeden ilk biten cagrinin onerilerini gorur.
             request_id = str(data.get('request_id') or '')[:64]
 
+            length_rule = {
+                'short': 'Her seçenek tek kısa cümle, yaklaşık 3–8 kelime olsun.',
+                'normal': 'Her seçenek 1–2 doğal cümle, yaklaşık 8–20 kelime olsun.',
+                'detailed': 'Her seçenek 2–3 kısa cümle, yaklaşık 20–45 kelime olsun.',
+            }[response_length]
+            length_rule = ('CEVAP UZUNLUĞU: ' + length_rule
+                           + ' Kelime sayısı dile göre yaklaşık hedeftir. Önceki kısa cevap '
+                           + 'önerileri yerine bu uzunluğu uygula; kolay seslendirme kuralını koru.\n\n')
             future_order = {}
             for call_index, (style_line, token_cap) in enumerate(style_splits):
                 fut = _ai_executor.submit(
                     transcriber.openai_responder.answer_question,
-                    static_head + style_line + message_tail,
+                    static_head + style_line + length_rule + message_tail,
                     json_mode=True,
-                    max_tokens=token_cap,
+                    max_tokens=1800 if response_length == 'detailed' else token_cap,
                 )
                 future_order[fut] = call_index
 
@@ -5639,6 +5652,8 @@ def generate_ai_response():
                     return jsonify({
                         'success': True,
                         'translation': formatted_translation,
+                        'native': translated,
+                        'turkish': turkish,
                         'romanized': romanized,
                         'target_lang_name': effective_translate_name
                     })

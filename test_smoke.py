@@ -235,6 +235,43 @@ def test_answer_contract():
 
 
 # ── 3b. Auto modda script-tespitli stil daraltmasi (B5) ──────────────
+def test_conversation_tools_contract():
+    client = make_client()
+    responder = buyedektir.transcriber.openai_responder
+    saved_key, saved_fn = responder.api_key, responder.answer_question
+    calls = []
+    responder.api_key = 'test-key'
+    def fake(prompt, **kwargs):
+        calls.append((prompt, kwargs))
+        return {'response': json.dumps({'options': [
+            {'translation': 'Hai', 'turkish': 'Evet', 'romanized': 'Hay'}
+        ], 'detected_lang': 'ja'})}
+    responder.answer_question = fake
+    try:
+        for length, marker, cap in [('short', '3–8', 1000), ('normal', '8–20', 1000), ('detailed', '20–45', 1800)]:
+            calls.clear()
+            result = client.post('/api/generate_ai_response', json={
+                'text':'Genki desu ka?', 'mode':'answer', 'target_lang':'ja', 'response_length':length
+            }).get_json()
+            check(result.get('success'), f'{length} cevap alınamadı')
+            check(len(calls) == 2, 'Uzunluk iki paralel çağrıyı korumalı')
+            check(all(marker in p and k['max_tokens'] == cap for p, k in calls), 'Uzunluk iki çağrıya da uygulanmalı')
+            check(all(p.index('CEVAP UZUNLUĞU') < p.index('MESAJ:') for p, _ in calls), 'Değişken mesaj sonda kalmalı')
+        calls.clear()
+        invalid = client.post('/api/generate_ai_response', json={'text':'Merhaba', 'response_length':'unknown'})
+        check(invalid.status_code == 400 and not calls, 'Geçersiz uzunluk AI çağırmamalı')
+        responder.answer_question = lambda *a, **k: {'response': json.dumps({
+            'translation':'少し遅れます。', 'turkish':'Biraz gecikeceğim.', 'romanized':'Sukoşi okuremas.'})}
+        result = client.post('/api/generate_ai_response', json={
+            'text':'Biraz gecikeceğim.', 'mode':'translate_dual', 'target_lang':'ja'
+        }).get_json()
+        check(result.get('native') == '少し遅れます。', 'Yazılı cevap için ayrı native alanı gerekli')
+        check(result.get('turkish') == 'Biraz gecikeceğim.' and result.get('romanized'), 'Anlam ve okunuş gerekli')
+        check(result.get('translation', '').startswith('Line1:'), 'Eski çeviri istemcisi uyumlu kalmalı')
+    finally:
+        responder.api_key, responder.answer_question = saved_key, saved_fn
+
+
 def test_auto_mode_style_narrowing():
     """target_lang='auto' iken eskiden TUM dillerin (ja+es+fr+ar+zh+ru) stil/
     telaffuz kurallari AYNI prompta giriyordu (celisen kurallar: Arapca 'ASLA
@@ -1595,6 +1632,7 @@ def test_speaker_reset_invalidates_inflight_result():
 
 def main():
     for fn in (test_pronunciation, test_hallucination, test_answer_contract,
+               test_conversation_tools_contract,
                test_auto_mode_style_narrowing, test_bidirectional_conversation_memory,
                test_settings_bounds, test_salvage, test_serialized_file_writes,
                test_partial_emit_session_guard,

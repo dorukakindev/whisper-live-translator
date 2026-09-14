@@ -79,6 +79,7 @@ async function pttTest() {
     let nextTimer = 0;
     const ctx = vm.createContext({
         console, crypto: require('crypto'), showAlert() {}, cancelPendingPtt() {}, pttHeld: false,
+        _replyGeneration: 0, _ownMicGeneration: null, updateOwnMicButton() {}, setCockpitValue() {},
         setTimeout(fn) {timers.set(++nextTimer, fn); return nextTimer;},
         clearTimeout(id) {timers.delete(id);},
         document: {activeElement: null, addEventListener(type, fn) {events[type] = fn;},

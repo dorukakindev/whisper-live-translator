@@ -2008,3 +2008,42 @@ body.light-mode .reply-choice[aria-pressed="true"] .reply-choice-number { color:
 .reply-option-card { padding: 20px; }
 @media (max-width: 640px) { .reply-detail-grid { grid-template-columns: minmax(0,1fr); gap: 0; } }
 .session-own-language strong { color: var(--wp-text); }
+/* Görüşme araçları aynı okuma yüzeyini kullanır. */
+.readiness-panel { order: 1; margin: 10px 24px 0; padding: 10px 14px; border: 1px solid var(--wp-border); border-radius: 8px; background: var(--wp-surface); font-size: 12px; }
+.readiness-panel summary, .main-quick-phrases summary { cursor: pointer; color: var(--wp-text); font-weight: 600; }
+.readiness-panel summary span { margin-left: 12px; color: var(--wp-text-muted); font-weight: 400; }
+.readiness-items { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.readiness-items button { flex: 1 1 150px; white-space: normal; text-align: left; }
+.readiness-panel p { color: var(--wp-text-secondary); margin: 10px 0 0; }
+.reply-cockpit { overflow-y: auto; display: block; }
+.reply-cockpit-options { overflow: visible; flex: none; }
+.conversation-tools { padding: 0 22px; }
+.answer-length { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 12px; font-size: 12px; color: var(--wp-text-secondary); }
+.answer-length select { width: 125px; min-height: 32px; }
+.reply-composer { padding: 14px; background: var(--wp-subtle); border: 1px solid var(--wp-border); border-radius: 8px; }
+.reply-composer label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; }
+.reply-composer textarea { box-sizing: border-box; width: 100%; min-height: 64px; max-height: 160px; resize: none; padding: 10px; line-height: 1.5; font: inherit; background: var(--wp-input); color: var(--wp-text); border: 1px solid var(--wp-border-control); border-radius: 6px; }
+.composer-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.composer-actions button { min-height: 36px; }
+#ownReplyTranslate { background: var(--wp-accent); color: var(--wp-canvas); }
+#ownReplyMic[aria-pressed="true"] { outline: 2px solid var(--wp-accent); }
+#ownReplyStatus { min-height: 32px; margin: 8px 0 0; color: var(--wp-text-secondary); font-size: 12px; line-height: 1.5; }
+.main-quick-phrases { margin-top: 12px; font-size: 12px; }
+.quick-hint { display: block; color: var(--wp-text-muted); font-weight: 400; margin: 5px 0 0 14px; }
+#quickPhrasesList { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 10px; }
+.quick-phrase-choice { min-height: 34px; white-space: normal; text-align: left; }
+.readiness-panel summary:hover, .main-quick-phrases summary:hover { color: var(--wp-accent-hover); }
+.readiness-panel summary:focus-visible, .main-quick-phrases summary:focus-visible { outline: 2px solid var(--wp-accent); outline-offset: 4px; }
+@media (max-width: 980px) { .reply-cockpit { overflow: visible; } }
+@media (max-width: 600px) { .readiness-panel { margin: 8px 14px 0; } .conversation-tools { padding: 0 14px; } .composer-actions button { flex: 1 1 150px; } }
+.composer-panel { margin: 8px 0; }
+.composer-panel summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--wp-text); padding: 6px 0; }
+.composer-panel summary span { color: var(--wp-text-muted); font-weight: 400; font-size: 11px; margin-left: 8px; }
+.composer-panel summary:hover { color: var(--wp-accent-hover); }
+.composer-panel summary:focus-visible { outline: 2px solid var(--wp-accent); outline-offset: 2px; }
+.composer-actions button, .readiness-items button, .quick-phrase-choice { appearance: none; background: var(--wp-raised); border: 1px solid var(--wp-border-control); color: var(--wp-text); border-radius: 6px; padding: 8px 12px; font: inherit; font-size: 12px; cursor: pointer; }
+.composer-actions button:hover, .readiness-items button:hover, .quick-phrase-choice:hover { border-color: var(--wp-accent); background: var(--wp-surface); }
+.composer-actions button:focus-visible, .readiness-items button:focus-visible, .quick-phrase-choice:focus-visible { outline: 2px solid var(--wp-accent); outline-offset: 2px; }
+.composer-actions button:active, .readiness-items button:active, .quick-phrase-choice:active { transform: translateY(1px); }
+.composer-actions button:disabled, .readiness-items button:disabled { opacity: .55; cursor: wait; transform: none; }
+.conversation-tools, .readiness-panel { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; }

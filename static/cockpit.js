@@ -1,5 +1,139 @@
 "use strict";
 
+// Kullanıcının yazdığı metin yalnız açık sayfada tutulur; yerel depoya kaydedilmez.
+let _ownReplyBusy = false;
+let _ownMicGeneration = null;
+let _readinessSnapshot = {};
+let _readinessBusy = false;
+
+async function translateOwnReply() {
+    if (_ownReplyBusy) return;
+    const input = document.getElementById('ownReplyText');
+    const text = input.value.trim();
+    const lang = document.getElementById('aiTargetLang').value;
+    if (!text || text.length > 2000) {
+        setCockpitValue('ownReplyStatus', '1–2000 karakter arasında Türkçe bir cümle yaz.');
+        input.setAttribute('aria-invalid', 'true');
+        input.focus();
+        return;
+    }
+    if (!lang || lang === 'auto') {
+        setCockpitValue('ownReplyStatus', 'Üst şeritten karşı tarafın dilini seç.');
+        document.getElementById('otherPartyLang').focus();
+        return;
+    }
+    input.removeAttribute('aria-invalid');
+    _ownReplyBusy = true;
+    const button = document.getElementById('ownReplyTranslate');
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    const id = 'own-' + crypto.randomUUID();
+    selectReplyTarget(id, text, true);
+    const generation = _replyGeneration;
+    const label = getSelectedTargetLanguageLabel();
+    setCockpitValue('ownReplyStatus', 'Çeviri hazırlanıyor…');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+    try {
+        const response = await fetch('/api/generate_ai_response', {
+            method:'POST', headers:{'Content-Type':'application/json'}, signal:controller.signal,
+            body:JSON.stringify({text, mode:'translate_dual', target_lang:lang, request_id:id})
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Çeviri alınamadı. Tekrar dene.');
+        if (!data.native || !data.romanized) throw new Error('Okunuş alınamadı. Tekrar dene.');
+        if (generation === _replyGeneration && document.getElementById('aiTargetLang').value === lang) {
+            renderReplyCockpit(id, [{translation:data.native, turkish:data.turkish || text, romanized:data.romanized}], lang, label, false);
+            document.getElementById('replyComposerPanel').open = false;
+            setCockpitValue('ownReplyStatus', 'Çeviri hazır. Okunuşu seslendirebilirsin.');
+        } else {
+            setCockpitValue('ownReplyStatus', 'Seçim değiştiği için eski çeviri gösterilmedi. Yeniden çevirebilirsin.');
+        }
+    } catch (error) {
+        const message = error.name === 'AbortError' ? 'Çeviri zaman aşımına uğradı. Tekrar dene.' : error.message;
+        setCockpitValue('ownReplyStatus', message);
+        if (generation === _replyGeneration) {
+            setCockpitValue('replyCockpitProgress', 'Çeviri alınamadı');
+            setCockpitValue('replyCockpitOptions', 'Metnin korundu. Çevir düğmesiyle tekrar deneyebilirsin.');
+        }
+    } finally {
+        clearTimeout(timer);
+        _ownReplyBusy = false;
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+    }
+}
+
+function toggleOwnReplyMic() {
+    if (altPttHeld) finishAltPtt();
+    else startOwnReplyMic();
+}
+
+function updateOwnMicButton() {
+    const button = document.getElementById('ownReplyMic');
+    if (!button) return;
+    button.textContent = altPttHeld ? 'Bitir ve çevir' : 'Mikrofonla söyle';
+    button.setAttribute('aria-pressed', String(altPttHeld));
+    setCockpitValue('ownReplyStatus', altPttHeld ? 'Türkçe konuş. Bitir ve çevir düğmesine bas.' : 'Ses işleniyor; sonuç konuşma akışında da görünür.');
+}
+
+function showOwnMicResult(data) {
+    if (data?.recording_id !== altPttRecordingId || _ownMicGeneration === null) return;
+    if (!data?.success) {
+        setCockpitValue('ownReplyStatus', data?.error || 'Ses işlenemedi. Tekrar dene.');
+        return;
+    }
+    setCockpitValue('ownReplyStatus', 'Sesin çevrildi. Konuşma akışından okuma modunu açabilirsin.');
+    if (!data.romanized || !data.translation || _ownMicGeneration !== _replyGeneration) return;
+    const lang = String(data.target_lang || '').toLowerCase();
+    if (lang !== document.getElementById('aiTargetLang').value) return;
+    _ownMicGeneration = null;
+    document.getElementById('replyComposerPanel').open = false;
+    const id = 'mic-' + data.id;
+    selectReplyTarget(id, data.original, true);
+    renderReplyCockpit(id, [{translation:data.translation, turkish:data.original, romanized:data.romanized}], lang, getSelectedTargetLanguageLabel(), false);
+}
+
+function updateReadiness(status = {}) {
+    _readinessSnapshot = {..._readinessSnapshot, ...status};
+    const state = _readinessSnapshot;
+    const model = state.model_loaded === true;
+    const device = document.getElementById('deviceSelect');
+    const hasDevice = Boolean(device?.value) && Number.isInteger(Number(device.value));
+    const aiState = state.ai_key_status || 'unknown';
+    const aiLabels = {valid:'Doğrulandı', missing:'Anahtar ekle', checking:'Doğrulanıyor', invalid:'Anahtarı düzelt', unverified:'Henüz doğrulanmadı', unavailable:'Hizmete ulaşılamıyor'};
+    setCockpitValue('readyModel', model ? `Model · ${state.model_name || 'Yüklü'}` : 'Model · Seç ve yükle', model ? 'active' : 'warn');
+    setCockpitValue('readyDevice', hasDevice ? `Ses · ${device.selectedOptions[0]?.textContent}` : 'Ses · Cihaz seç', hasDevice ? 'active' : 'warn');
+    setCockpitValue('readyAi', 'AI · ' + (aiLabels[aiState] || 'Kontrol edilmedi'), aiState === 'valid' ? 'active' : 'warn');
+    const count = Number(model) + Number(hasDevice) + Number(aiState === 'valid');
+    setCockpitValue('readinessSummary', _socketConnected ? `${count}/3 hazır` : 'Bağlantı yok');
+}
+
+async function refreshReadiness() {
+    if (_readinessBusy) return;
+    _readinessBusy = true;
+    const button = document.getElementById('readinessRefresh');
+    button.disabled = true;
+    setCockpitValue('readinessStatus', 'Kontrol ediliyor…');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+        const response = await fetch('/api/status', {signal:controller.signal});
+        if (!response.ok) throw new Error('Durum alınamadı');
+        updateReadiness(await response.json());
+        setCockpitValue('readinessStatus', 'Eksik adımı açmak için ilgili düğmeye bas. Ses cihazının seçili olması ses sinyali alındığını doğrulamaz.');
+    } catch (error) {
+        _readinessSnapshot = {};
+        updateReadiness();
+        setCockpitValue('readinessSummary', 'Kontrol başarısız');
+        setCockpitValue('readinessStatus', 'Sunucuya ulaşılamadı. Yeniden kontrol et.');
+    } finally {
+        clearTimeout(timeout);
+        button.disabled = false;
+        _readinessBusy = false;
+    }
+}
+
 // Cevap kokpiti ve klavye akışı; index.html global durum sözleşmesini kullanır.
 function setCockpitValue(id, text, state = '') {
     const el = document.getElementById(id);
@@ -11,6 +145,7 @@ function setCockpitValue(id, text, state = '') {
 // Karar, kullaniciya gosterilen metni ayrıştırmaz; socket ve runtime
 // durumunun kendisini kullanir. Boylece "Baglaniyor" yanlislikla yesil olmaz.
 function updateCockpitStatus() {
+    if (typeof updateReadiness === 'function') updateReadiness();
     const backend = document.getElementById('statusText');
     const backendText = String(backend?.textContent || 'Hazır').trim();
     const active = Boolean(isCapturing);

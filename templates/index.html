@@ -1661,6 +1661,15 @@
             </div>
         </section>
 
+        <details class="readiness-panel" id="readinessPanel" ontoggle="if(this.open) refreshReadiness()">
+            <summary>Görüşmeye hazırlık <span id="readinessSummary">Durumu kontrol et</span></summary>
+            <div class="readiness-items">
+                <button type="button" id="readyModel" onclick="focusSetupTarget('model')">Model · Kontrol edilmedi</button>
+                <button type="button" id="readyDevice" onclick="focusSetupTarget('device')">Ses · Cihaz seç</button>
+                <button type="button" id="readyAi" onclick="focusSetupTarget('ai')">AI · Kontrol edilmedi</button>
+                <button type="button" id="readinessRefresh" onclick="refreshReadiness()">Yeniden kontrol et</button>
+            </div><p id="readinessStatus" role="status">Kontrol için aç.</p>
+        </details>
         <div class="main-grid">
             <!-- Sol Panel - Kontroller -->
             <div class="card control-panel" id="controlPanel">
@@ -2014,26 +2023,6 @@
                             AI cevap önerileri üretirken bu konuşma üslubunu ve tonunu kullanır.
                         </div>
                     </div>
-                    </div>
-                </div>
-
-                <!-- Hazır Kalıplar (cevap diline göre sık cümleler) -->
-                <div class="ai-response-settings" id="quickPhrasesPanel">
-                    <h3 role="button" tabindex="0" aria-expanded="true"
-                        style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;"
-                        onclick="toggleAIResponseSettings(this)"
-                        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleAIResponseSettings(this)}">
-                        <span>
-                            Hızlı Kalıplar
-                            <span class="tooltip" tabindex="0" aria-label="Hızlı kalıplar hakkında bilgi">i
-                                <span class="tooltiptext">Seçili cevap diline göre sık kullanılan hazır cümleler — okunuşuyla. Tek tuşla 🔊 dinle, 🔍 büyüt, 📋 kopyala veya ⭐ ile Kalıp Cevaplara ekle.</span>
-                            </span>
-                            <span id="quickPhrasesLang" style="font-size: 11px; color: var(--text-muted); font-weight: normal;"></span>
-                        </span>
-                        <span style="font-size: 12px; transition: transform 0.3s;">▼</span>
-                    </h3>
-                    <div class="ai-settings-content">
-                        <div id="quickPhrasesList" style="max-height: 360px; overflow-y: auto;"></div>
                     </div>
                 </div>
 
@@ -2430,6 +2419,17 @@
                     </div>
                     <span class="reply-cockpit-progress" id="replyCockpitProgress" aria-live="polite"></span>
                 </header>
+                <div class="conversation-tools">
+                    <div class="answer-length"><label for="responseLength">Öneri uzunluğu</label><select id="responseLength" onchange="whisperStorage.setItem('responseLength', this.value)"><option value="short">Kısa</option><option value="normal" selected>Normal</option><option value="detailed">Detaylı</option></select></div>
+                    <details id="replyComposerPanel" class="composer-panel"><summary>Kendi cevabını yaz veya söyle <span>Türkçeden çevir</span></summary>
+                    <form class="reply-composer" novalidate onsubmit="event.preventDefault(); translateOwnReply()">
+                        <label for="ownReplyText">Söylemek istediğimi çevir</label>
+                        <textarea style="resize: none" id="ownReplyText" maxlength="2000" rows="2" placeholder="Türkçe yaz: Biraz gecikeceğim, beni bekler misin?" aria-describedby="ownReplyStatus" oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,160)+'px';this.removeAttribute('aria-invalid')" onkeydown="if(event.key==='Enter' &amp;&amp; (event.ctrlKey || event.metaKey) &amp;&amp; !event.isComposing){event.preventDefault();translateOwnReply()}"></textarea>
+                        <div class="composer-actions"><button type="submit" id="ownReplyTranslate">Çevir ve okunuşu göster</button><button type="button" id="ownReplyMic" aria-pressed="false" onclick="toggleOwnReplyMic()">Mikrofonla söyle</button></div>
+                        <p id="ownReplyStatus" role="status">Türkçe yaz veya Alt tuşunu basılı tutarak konuş.</p>
+                    </form></details>
+                    <details id="quickPhrasesPanel" class="main-quick-phrases"><summary>Hızlı kalıplar <span id="quickPhrasesLang"></span><span class="quick-hint">Tekrar eder misin? · Daha yavaş lütfen</span></summary><div id="quickPhrasesList"></div></details>
+                </div>
                 <div class="reply-cockpit-options" id="replyCockpitOptions">
                     <div class="reply-cockpit-empty"><span class="reply-empty-symbol" aria-hidden="true">Aa</span><strong>Cevabın burada hazırlanacak</strong><span>Gelen konuşmada Cevap öner düğmesine bas.<br>Yabancı dil bilmeden, okunuşu takip ederek yanıt ver.</span></div>
                 </div>
@@ -2481,6 +2481,7 @@
         }
 
         function updateSetupChecklist(status = {}) {
+            if (typeof updateReadiness === 'function') updateReadiness(status);
             const set = (id, ready, readyText, pendingText) => {
                 const el = document.getElementById(id);
                 if (!el) return;
@@ -2493,7 +2494,7 @@
             const aiState = String(status.ai_key_status || _lastAiKeyStatus);
             set('setupModel', modelReady, 'model yüklü', 'model seç ve yükle');
             set('setupDevice', deviceReady, 'ses cihazı seçili', 'ses cihazı seç');
-            set('setupAi', aiState === 'valid' || aiState === 'unverified',
+            set('setupAi', aiState === 'valid',
                 'OpenAI anahtarı kullanılabilir', 'OpenAI anahtarını doğrula');
             set('setupStart', modelReady && deviceReady, 'Başlat düğmesi kullanılabilir',
                 'önce model ve cihazı hazırla');
@@ -3548,7 +3549,10 @@
             });
 
             // PTT ve hydration ayni kimlik/budama sozlesmesini kullanir.
-            socket.on('ptt_mic_result', data => renderPttTranscription(data));
+            socket.on('ptt_mic_result', data => {
+                renderPttTranscription(data);
+                showOwnMicResult(data);
+            });
 
             socket.on('ai_options_partial', (msg) => {
                 if (!msg) return;
@@ -5095,6 +5099,26 @@
             return data;
         }
 
+        function startOwnReplyMic() {
+                if (altPttHeld) return;
+                if (altPttPendingTimer !== null) { clearTimeout(altPttPendingTimer); altPttPendingTimer = null; }
+                _ownMicGeneration = _replyGeneration;
+                altPttHeld = true;
+                altPttRecordingId = crypto.randomUUID();
+                const holdId = ++altPttHoldId;
+                queueAltPtt(true).then(data => {
+                    if (altPttHeld && holdId === altPttHoldId) {
+                        showAlert('🎙️ Sesiniz dinleniyor — bitirdiğinizde çevrilir', 'info');
+                    }
+                }).catch(error => {
+                    console.error('Alt PTT başlatma hatası:', error);
+                    if (holdId === altPttHoldId) finishAltPtt(true);
+                    setCockpitValue('ownReplyStatus', error.message);
+                    showAlert(`Alt PTT başlatılamadı: ${error.message}`, 'error');
+                });
+                updateOwnMicButton();
+        }
+
         function queueAltPtt(active, discard = false) {
             const recordingId = altPttRecordingId;
             // true/false komutlarini kesin sirada tut. A'nin geciken stop'u B'nin
@@ -5113,13 +5137,16 @@
                 altPttPendingTimer = null;
             }
             if (!altPttHeld) return;
+            if (discard) _ownMicGeneration = null;
             altPttHeld = false;
+            updateOwnMicButton();
             queueAltPtt(false, discard).then(data => {
                 if (data && data.processing) {
                     showAlert('⏳ Sesiniz işleniyor ve çevriliyor...', 'success');
                 }
             }).catch(error => {
                 console.error('Alt PTT bitirme hatası:', error);
+                setCockpitValue('ownReplyStatus', error.message);
                 showAlert(`Alt PTT hatası: ${error.message}`, 'error');
             });
         }
@@ -5142,17 +5169,7 @@
 
             altPttPendingTimer = setTimeout(() => {
                 altPttPendingTimer = null;
-                altPttHeld = true;
-                altPttRecordingId = crypto.randomUUID();
-                const holdId = ++altPttHoldId;
-                queueAltPtt(true).then(data => {
-                    if (altPttHeld && holdId === altPttHoldId) {
-                        showAlert('🎙️ Alt basılı — sesiniz dinleniyor (bırakınca çevrilir)', 'info');
-                    }
-                }).catch(error => {
-                    console.error('Alt PTT başlatma hatası:', error);
-                    showAlert(`Alt PTT başlatılamadı: ${error.message}`, 'error');
-                });
+                startOwnReplyMic();
             }, 150);
         });
 
@@ -5734,6 +5751,7 @@
                         mode: mode === 'translate' ? 'translate_dual' : mode,
                         target_lang: targetLang,
                         tone: document.getElementById('aiResponseTone')?.value || 'arkadasca',
+                        response_length: document.getElementById('responseLength')?.value || 'normal',
                         request_id: requestId,
                         transcript_id: id
                     })
@@ -6000,6 +6018,8 @@
         // Initialize theme and PTT selector
         document.addEventListener('DOMContentLoaded', () => {
             updateCockpitStatus();
+            const savedLength = whisperStorage.getItem('responseLength');
+            if (['short','normal','detailed'].includes(savedLength)) document.getElementById('responseLength').value = savedLength;
             const targetSelect = document.getElementById('aiTargetLang');
             if (targetSelect) targetSelect.addEventListener('change', updateCockpitStatus);
             const captureMode = document.getElementById('captureModeSelect');

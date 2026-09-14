@@ -28,17 +28,18 @@ function renderQuickPhrases() {
         list.innerHTML = `<div style="font-size:12px; color:var(--text-muted); padding:4px 0;">Bu cevap dili için hazır kalıp yok. Mevcut: Japonca, İngilizce, İspanyolca, Almanca, Fransızca, İtalyanca, Portekizce, Rusça, Korece, Çince, Arapça.</div>`;
         return;
     }
-    list.innerHTML = phrases.map(p => `
-        <div class="mini-card" style="padding:7px 8px;">
-            <div style="font-size:11px; color:var(--text-muted);">${escapeHtml(p.tr)}</div>
-            <div style="font-weight:600; font-size:13px; margin-top:1px;">${escapeHtml(p.t)}</div>
-            <div class="okunus-text" style="margin-top:2px;">🔤 ${escapeHtml(p.o)}</div>
-            <div style="margin-top:5px; display:flex; gap:5px; flex-wrap:wrap;">
-                <button class="copy-btn" style="margin:0;" title="Sesli dinle" onclick="speakText('${escapeJsString(p.t)}', '${escapeJsString(lang)}')">🔊</button>
-                <button class="copy-btn" style="margin:0;" title="Büyük puntoyla göster" onclick="openReadingMode('${escapeJsString(p.o)}', '${escapeJsString(p.t)}', '${escapeJsString(p.tr)}', '${escapeJsString(lang)}')">🔍</button>
-                <button class="copy-btn" style="margin:0;" title="Kopyala" onclick="copyResponseText('${escapeJsString(p.t)}')">📋</button>
-                <button class="copy-btn" style="margin:0;" title="Kalıp Cevaplara ekle" onclick="saveFavorite('${escapeJsString(p.t)}', '${escapeJsString(p.tr)}', '${escapeJsString(p.o)}', '${escapeJsString(lang)}')">⭐</button>
-            </div>
-        </div>
+    list.innerHTML = phrases.map((p, index) => `
+        <button type="button" class="quick-phrase-choice" onclick="chooseQuickPhrase(${index})">${escapeHtml(p.tr)}</button>
     `).join('');
+}
+
+// Hazır okunuşları ortak okuma yüzeyine taşır; ağ isteği oluşturmaz.
+function chooseQuickPhrase(index) {
+    const lang = document.getElementById('aiTargetLang').value;
+    const phrase = QUICK_PHRASES[lang]?.[index];
+    if (!phrase) return;
+    selectReplyTarget('quick-phrase', phrase.tr, true);
+    renderReplyCockpit('quick-phrase', [{translation:phrase.t, turkish:phrase.tr, romanized:phrase.o}], lang, getSelectedTargetLanguageLabel(), false);
+    document.getElementById('quickPhrasesPanel').open = false;
+    document.querySelector('#replyCockpitOptions .reply-read-button')?.focus({preventScroll:true});
 }
