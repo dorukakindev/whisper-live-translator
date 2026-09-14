@@ -1,5 +1,7 @@
 # Devir notları
 
+Güncel eşitleme notu: [2026-09-15 04:30 — yerel/GitHub doğrulaması](docs/devir/2026-09-15-0430.md). Önceki kayıtlar aşağıda korunmuştur.
+
 Yeni oturum ve format sonrası kurulum: [BASLANGIC.md](BASLANGIC.md)
 
 Güncel devir notu: [2026-09-14 14:50 — Oyun modu ve dengeli ses profili](docs/devir/2026-09-14-1450.md)
