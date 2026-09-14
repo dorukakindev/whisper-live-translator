@@ -491,6 +491,17 @@ app.whenReady().then(async () => {
     await win.webContents.executeJavaScript(`applyGameLock({locked:true});`);
     await new Promise(resolve => setTimeout(resolve, 250));
     fs.writeFileSync(path.join(outputDir, '320x220-game-locked.png'), (await win.webContents.capturePage()).toPNG());
+    const fitsGameBox = await win.webContents.executeJavaScript(`(() => {
+        const text=document.querySelector('.translation-text').getBoundingClientRect();
+        const body=document.getElementById('body').getBoundingClientRect();
+        return text.top >= body.top && text.bottom <= body.bottom;
+    })()`);
+    assert(fitsGameBox, 'Küçük kilitli kutuda örnek çeviri kesildi');
+    win.setSize(520, 360);
+    await win.webContents.executeJavaScript(`applyGameLock({locked:false});document.body.classList.add('light-mode');document.getElementById('hudSettings').open=true;`);
+    assert.strictEqual(await win.webContents.executeJavaScript(`getComputedStyle(document.getElementById('hudConnection')).color`), 'rgb(70, 81, 87)');
+    await new Promise(resolve => setTimeout(resolve, 250));
+    fs.writeFileSync(path.join(outputDir, '520x360-game-settings-light.png'), (await win.webContents.capturePage()).toPNG());
     win.close();
     console.log('Gercek Chromium Cockpit davranis ve gorsel testleri gecti:', outputDir);
     app.quit();

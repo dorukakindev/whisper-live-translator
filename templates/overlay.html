@@ -12,284 +12,102 @@
     <style>
         :root {
             color-scheme: dark;
-            --bg-main: var(--wp-canvas);
-            --bg-card: var(--wp-surface);
-            --bg-raised: var(--wp-raised);
+            --primary: var(--wp-accent);
             --text-main: var(--wp-text);
             --text-secondary: var(--wp-text-secondary);
             --text-muted: var(--wp-text-muted);
-            --primary: var(--wp-accent);
-            --primary-hover: var(--wp-accent-hover);
-            --translation: var(--wp-translation);
-            --success: var(--wp-success);
-            --warning: var(--wp-warning);
             --border-color: var(--wp-border);
             --border-strong: var(--wp-border-strong);
-        }
-
-        body.light-mode {
-            --bg-main: rgba(223, 227, 228, 0.97);
-            --bg-card: var(--wp-surface);
             --bg-raised: var(--wp-raised);
-            --text-main: var(--wp-text);
-            --text-secondary: var(--wp-text-secondary);
-            --text-muted: var(--wp-text-muted);
+        }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+        html { background: transparent; }
+        body {
+            --hud-opacity: .94; --hud-font: 24px;
             --primary: var(--wp-accent);
-            --primary-hover: var(--wp-accent-hover);
-            --translation: var(--wp-translation);
-            --success: var(--wp-success);
-            --warning: var(--wp-warning);
+            --text-secondary: var(--wp-text-secondary);
             --border-color: var(--wp-border);
             --border-strong: var(--wp-border-strong);
-        }
-
-        * {
-            box-sizing: border-box;
-        }
-
-        html,
-        body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            background: transparent;
-            overflow: hidden;
-        }
-
-        body {
-            position: relative;
+            --bg-raised: var(--wp-raised);
+            display: flex; flex-direction: column; position: relative;
             font-family: "Segoe UI Variable Text", "Segoe UI", Arial, sans-serif;
-            color: var(--text-main);
-            display: flex;
-            flex-direction: column;
-            border-radius: 12px;
-            background: var(--bg-main);
-            border: 1px solid var(--border-color);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.34);
+            color: var(--text-main); border-radius: 18px;
+            border: 1px solid color-mix(in srgb, var(--wp-text) 15%, transparent);
+            background: linear-gradient(135deg, color-mix(in srgb, var(--wp-accent) 7%, transparent), transparent 60%),
+                color-mix(in srgb, var(--wp-canvas) calc(var(--hud-opacity) * 100%), transparent);
+            box-shadow: inset 0 1px 0 color-mix(in srgb, var(--wp-text) 7%, transparent), 0 12px 36px #00000028;
         }
-
-        body::before {
-            content: "";
-            position: absolute;
-            z-index: 2;
-            top: 0;
-            bottom: 0;
-            left: 0;
-            width: 3px;
-            background: var(--primary);
-        }
-
-        /* Pencerenin cerçevesi yok (frame:false); bu şerit taşımayı sağlar. */
+        button, input, summary { -webkit-app-region: no-drag; }
+        button { font: inherit; cursor: pointer; }
+        button:disabled { cursor: default; opacity: .5; }
+        button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
         #dragHeader {
-            -webkit-app-region: drag;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            min-height: 38px;
-            padding: 7px 10px 7px 13px;
-            font-family: "Cascadia Mono", Consolas, monospace;
-            font-size: 9px;
-            font-weight: 650;
-            letter-spacing: 0.11em;
-            text-transform: uppercase;
-            color: var(--text-muted);
-            border-bottom: 1px solid var(--border-color);
-            flex-shrink: 0;
+            -webkit-app-region: drag; flex-shrink: 0; min-height: 44px;
+            display: flex; justify-content: space-between; align-items: center;
+            gap: 12px; padding: 10px 16px 4px 20px;
         }
-
-        #dragHeader .status-dot {
-            display: inline-block;
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: var(--text-muted);
-            margin-right: 6px;
-        }
-
-        #dragHeader .status-dot.connected {
-            background: var(--success);
-        }
-
-        #dragHeader button {
-            -webkit-app-region: no-drag;
-            width: 28px;
-            height: 28px;
-            display: inline-grid;
-            place-items: center;
-            padding: 0;
-            color: var(--text-muted);
-            background: transparent;
-            border: 1px solid transparent;
-            border-radius: 7px;
-            cursor: pointer;
-        }
-
-        #dragHeader button:hover {
-            color: var(--text-main);
-            background: var(--bg-raised);
-            border-color: var(--border-strong);
-        }
-
-        #dragHeader button:focus-visible,
-        #aiBtn:focus-visible {
-            outline: 2px solid var(--primary);
-            outline-offset: 2px;
-        }
-
-        #dragHeader button svg {
-            width: 15px;
-            height: 15px;
-            fill: none;
-            stroke: currentColor;
-            stroke-linecap: round;
-            stroke-width: 1.8;
-        }
-
-        #body {
-            flex: 1;
-            overflow-y: auto;
-            padding: 12px 12px 14px 15px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .transcript-text {
-            font-size: 15px;
-            line-height: 1.52;
-            color: var(--text-main);
-            word-break: break-word;
-        }
-
-        .translation-text {
-            font-size: 13px;
-            line-height: 1.4;
-            padding: 8px 10px;
-            color: var(--translation);
-            background: rgba(143, 197, 194, 0.055);
-            border-left: 2px solid var(--translation);
-            border-radius: 0 7px 7px 0;
-            word-break: break-word;
-        }
-
-        .okunus-box {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 9px;
-            padding: 11px;
-        }
-
-        .okunus-label {
-            font-size: 9px;
-            font-weight: 700;
-            color: var(--text-secondary);
-            margin-bottom: 4px;
-            text-transform: uppercase;
-        }
-
-        .okunus-text {
-            font-size: 18px;
-            line-height: 1.6;
-            font-weight: 600;
-            color: var(--primary-hover);
-            word-break: break-word;
-        }
-
-        .reply-text {
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-top: 4px;
-        }
-
-        #aiBtn {
-            -webkit-app-region: no-drag;
-            align-self: flex-start;
-            min-height: 36px;
-            background: var(--primary);
-            color: #1b160f;
-            border: 1px solid var(--primary);
-            border-radius: 9px;
-            padding: 7px 12px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-        }
-
-        #aiBtn:disabled {
-            opacity: 0.45;
-            cursor: default;
-        }
-
-        #aiBtn:hover:not(:disabled) {
-            background: var(--primary-hover);
-            border-color: var(--primary-hover);
-        }
-
-        .empty-hint {
-            font-size: 12px;
-            color: var(--text-muted);
-            text-align: center;
-            margin-top: 20px;
-        }
-
-        ::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: var(--border-strong);
-            border-radius: 3px;
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            *, *::before, *::after {
-                animation-duration: 0.01ms !important;
-                transition-duration: 0.01ms !important;
-            }
-        }
-    </style>
-    <style>
-        body { --hud-opacity: .94; --hud-font: 24px; background: color-mix(in srgb, var(--wp-canvas) calc(var(--hud-opacity) * 100%), transparent); border-radius: 14px; }
-        #dragHeader { font-family: inherit; font-size: 11px; text-transform: none; letter-spacing: .02em; padding: 8px 14px; }
-        .hud-brand { display: flex; align-items: center; gap: 6px; }
-        .hud-brand strong { color: var(--text-main); font-weight: 650; }
-        #hudConnection { font-size: 10px; color: var(--text-secondary); }
-        #body { padding: 14px 18px; gap: 10px; min-height: 0; }
-        .translation-text { order: -1; padding: 0; border: 0; background: none; color: var(--text-main); font-size: var(--hud-font); font-weight: 600; line-height: 1.38; letter-spacing: -.02em; }
-        .transcript-text { color: var(--text-secondary); font-size: 13px; line-height: 1.45; }
+        .hud-brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+        .hud-mark { width: 19px; height: 19px; color: var(--primary); flex-shrink: 0; }
+        .hud-brand strong { font-size: 11px; font-weight: 650; letter-spacing: .035em; }
+        .hud-live { display: flex; align-items: center; gap: 5px; color: var(--text-secondary); font-size: 10px; }
+        .status-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--wp-text-muted); flex-shrink: 0; }
+        .status-dot.connected { background: var(--wp-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--wp-success) 10%, transparent); }
+        #closeBtn { display: grid; place-items: center; width: 25px; height: 25px; padding: 5px; border: 0; border-radius: 7px; color: var(--text-secondary); background: transparent; }
+        #closeBtn:hover { background: var(--bg-raised); color: var(--text-main); }
+        #closeBtn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+        #body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 22px 16px; display: flex; flex-direction: column; gap: 10px; }
+        .translation-text { order: -1; color: var(--text-main); font-size: var(--hud-font); font-weight: 550; line-height: 1.35; letter-spacing: -.02em; overflow-wrap: anywhere; }
+        .transcript-text { color: var(--text-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; padding-left: 10px; border-left: 1px solid color-mix(in srgb, var(--wp-accent) 50%, transparent); }
         .translation-pending { color: var(--text-secondary); font-size: 16px; font-weight: 400; }
-        .hud-footer { border-top: 1px solid var(--border-color); padding: 8px 14px; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-shrink: 0; font-size: 10px; color: var(--text-secondary); }
-        .hud-footer button, .hud-settings button { background: var(--bg-raised); color: var(--text-main); border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 8px; cursor: pointer; font: inherit; }
-        button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-        .hud-settings { padding: 8px 14px; flex-shrink: 0; border-top: 1px solid var(--border-color); font-size: 11px; color: var(--text-secondary); }
-        .hud-settings summary { cursor: pointer; }
-        .hud-settings .controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-top: 10px; }
-        .hud-settings label { display: flex; align-items: center; gap: 6px; }
-        .hud-settings input[type=range] { width: 90px; accent-color: var(--primary); }
-        .hud-settings p { font-size: 10px; line-height: 1.5; margin: 8px 0 0; }
+        #aiBtn { align-self: flex-start; border: 0; background: transparent; padding: 2px 0; color: var(--text-secondary); font-size: 10px; }
+        #aiBtn:hover:not(:disabled) { color: var(--primary); }
+        .okunus-box { padding: 10px 12px; background: var(--wp-surface); border: 1px solid var(--border-color); border-radius: 10px; }
+        .okunus-label, .reply-text { font-size: 11px; line-height: 1.5; color: var(--text-secondary); }
+        .okunus-text { font-size: 18px; line-height: 1.5; color: var(--primary); margin: 5px 0; }
+        .empty-hint { margin: auto 0; font-size: 12px; line-height: 1.65; color: var(--text-secondary); }
+        .empty-hint strong { display: block; margin-bottom: 7px; font-size: 21px; font-weight: 550; letter-spacing: -.02em; color: var(--text-main); }
+        .hud-settings { flex-shrink: 0; padding: 0 20px 8px; font-size: 10px; color: var(--text-secondary); }
+        .hud-settings summary { cursor: pointer; width: fit-content; }
+        .hud-settings[open] { padding-top: 8px; background: color-mix(in srgb, var(--wp-raised) 50%, transparent); border-top: 1px solid var(--border-color); }
+        .hud-settings .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin: 12px 0; }
+        .hud-settings label { display: flex; align-items: center; gap: 7px; }
+        .hud-settings input { accent-color: var(--primary); }
+        .hud-settings input[type=range] { appearance: none; width: 84px; height: 18px; min-height: 18px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+        .hud-settings input[type=range]::-webkit-slider-runnable-track { height: 3px; border-radius: 3px; background: var(--border-strong); }
+        .hud-settings input[type=range]::-webkit-slider-thumb { appearance: none; width: 11px; height: 11px; margin-top: -4px; background: var(--primary); border: 2px solid var(--wp-text); border-radius: 50%; }
+        .hud-settings p { margin: 8px 0 4px; font-size: 10px; line-height: 1.5; }
+        .hud-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 14px 8px 20px; border-top: 1px solid color-mix(in srgb, var(--wp-text) 7%, transparent); font-size: 10px; color: var(--text-secondary); }
+        #lockBtn { padding: 6px 11px; color: var(--wp-text); border: 1px solid color-mix(in srgb, var(--wp-accent) 35%, transparent); border-radius: 20px; background: color-mix(in srgb, var(--wp-accent) 12%, transparent); font-size: 10px; font-weight: 600; white-space: nowrap; }
+        #lockBtn:hover:not(:disabled) { background: color-mix(in srgb, var(--wp-accent) 23%, transparent); }
         body.hide-original .transcript-text { display: none; }
-        body.game-locked .hud-settings, body.game-locked #closeBtn, body.game-locked #aiBtn { display: none; }
-        body.game-locked #dragHeader { -webkit-app-region: no-drag; }
-        body.game-locked .transcript-text, body.game-locked #answerArea { display: none; }
-        body.game-locked #dragHeader { min-height: 30px; padding: 5px 12px; }
-        body.game-locked .hud-footer { padding: 4px 10px; font-size: 9px; }
-        body.game-locked .hud-footer button { padding: 2px 4px; border: 0; background: none; font-size: 9px; }
-        body.game-locked #body { padding: 10px 14px; }
-        body.light-mode { background: color-mix(in srgb, var(--wp-canvas) calc(var(--hud-opacity) * 100%), transparent); }
+        body.game-locked .hud-settings, body.game-locked #closeBtn, body.game-locked #aiBtn, body.game-locked .transcript-text, body.game-locked #answerArea { display: none; }
+        body.game-locked #dragHeader { -webkit-app-region: no-drag; min-height: 32px; padding: 8px 16px 2px; }
+        body.game-locked #body { padding: 12px 18px; justify-content: safe center; }
+        body.game-locked .hud-footer { border-color: transparent; padding: 3px 16px 9px; font-size: 9px; }
+        body.game-locked #lockBtn { border: 0; padding: 3px 6px; background: color-mix(in srgb, var(--wp-text) 5%, transparent); color: var(--text-secondary); font-size: 9px; font-weight: 400; }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; }
         @media (max-width: 360px) {
-            body.game-locked .translation-text { font-size: min(var(--hud-font), 18px); line-height: 1.35; }
+            .hud-brand { gap: 7px; }
             #hudConnection { font-size: 9px; }
+            #body { padding: 12px 16px; }
+            body.game-locked .translation-text { font-size: min(var(--hud-font), 18px); }
+            body.game-locked .hud-brand strong { font-size: 10px; }
+            body.game-locked .hud-footer { font-size: 8px; padding-inline: 12px; }
+            body.game-locked #lockBtn { font-size: 8px; }
         }
-        #aiBtn { font-size: 10px; padding: 4px 8px; min-height: 26px; background: transparent; color: var(--text-secondary); border-color: var(--border-color); }
-        .empty-hint { text-align: left; margin: auto 0; line-height: 1.65; font-size: 13px; }
-        .empty-hint strong { display: block; font-size: 19px; font-weight: 600; color: var(--text-main); margin-bottom: 6px; }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
     </style>
 </head>
 
 <body>
     <div id="dragHeader">
-        <span class="hud-brand"><span class="status-dot" id="statusDot"></span><strong>Whisper Pro</strong><span id="hudConnection">Bağlanıyor…</span></span>
+        <span class="hud-brand">
+            <svg class="hud-mark" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 8v4M7 4v12M11 6v8M15 2v16"/></svg>
+            <strong>Whisper Pro</strong>
+            <span class="hud-live"><span class="status-dot" id="statusDot"></span><span id="hudConnection">Bağlanıyor…</span></span>
+        </span>
         <button id="closeBtn" onclick="window.close()" title="Kapat" aria-label="Overlay penceresini kapat">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg>
         </button>
@@ -298,7 +116,7 @@
         <div class="empty-hint" id="emptyHint"><strong>Oyun senin, çeviri burada.</strong>Ana pencerede Sistem sesi ve çeviriyi açıp Başlat’a bas. Duyulan konuşmanın çevirisi burada belirecek.</div>
     </div>
     <details class="hud-settings" id="hudSettings">
-        <summary>Görünüm ve kullanım</summary>
+        <summary>Görünüm</summary>
         <div class="controls">
             <label>Yazı <input id="hudFont" type="range" min="18" max="36" value="24" oninput="saveHudAppearance()"></label>
             <label>Zemin <input id="hudOpacity" type="range" min="40" max="100" value="94" oninput="saveHudAppearance()"></label>
