@@ -98,6 +98,8 @@ Görüşmeye hazırlık açıldığında model ve AI durumu sunucudan alınır; 
 
 ### Oyun çeviri kutusu
 
+Görsel yön: küçük ses dalgası işareti, ince başlık, ortak vurgu renginden türeyen hafif yüzey ışığı ve 18 px köşe. Tam genişlikte kalın ayırıcılar kullanılmaz. Çeviri 550 ağırlığında; orijinal metin ince dikey çizgiyle ikincildir. Kilitli modda metin taşmıyorsa dikey ortalanır, uzun metinde kaydırma başlangıcı korunur. Durum ve kısayol alt şeritte sakin görünür. Görünüm kaydırıcıları ince iz ve yuvarlak tutamaç kullanır. Açık temada yardımcı metin alias'ları body kapsamındaki tema tokenlarından çözülür; kökteki koyu renk miras alınmaz.
+
 Ana pencerenin Oyun çevirisi düğmesi aynı backend'in `/overlay` penceresini açar. Varsayılan 520×240, en küçük 320×220; ekran dışındaki kayıtlı konum görünür alana taşınır. Pencere odağı çalmadan açılır. Büyük çeviri birincil, küçük orijinal metin ikincildir; kaynak sistem sesidir, mic/PTT olayları gösterilmez. Önceki tema tokenları korunur; zemin saydamlığı ve 18–36 px yazı tercihi yerel saklanır.
 
 Ctrl+Shift+O göster/gizle, Ctrl+Shift+L oyun kilididir. Kilit fareyi oyuna geçirir ve pencereyi odaklanamaz yapar; açılınca görünüm/taşıma kontrolleri geri gelir. Kilit kısayolu kaydedilemezse kilitleme reddedilir. Kilitli modda yalnız çeviri görünür, dar boyutta yazı en çok 18 px olur; kontroller alanı küçülür. Çok uzun çeviriler için kutu büyütülebilir veya yazı küçültülebilir. Ayar/yardım alanı başlangıçta kapalıdır. Backend sıfırlaması, düzeltme sürümü, geç gelen çeviri ve PTT ayrımı ortak kayıt sözleşmesine uyar. Exclusive fullscreen desteği garanti edilmez; kenarlıksız pencere modu önerilir. Harici DLL enjeksiyonu/hook yoktur.
