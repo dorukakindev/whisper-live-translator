@@ -1,5 +1,16 @@
 "use strict";
 
+async function openGameOverlay() {
+    if (!window.electronAPI?.overlayControl) {
+        showAlert('Oyun çeviri kutusunu masaüstü uygulamasından açabilirsin.', 'info');
+        return;
+    }
+    try {
+        const result = await window.electronAPI.overlayControl('open');
+        if (!result.success) showAlert('Önce ana pencerenin bağlantısının hazır olmasını bekle.', 'warning');
+    } catch (_) { showAlert('Çeviri kutusu açılamadı. Tekrar dene.', 'error'); }
+}
+
 // Kullanıcının yazdığı metin yalnız açık sayfada tutulur; yerel depoya kaydedilmez.
 let _ownReplyBusy = false;
 let _ownMicGeneration = null;

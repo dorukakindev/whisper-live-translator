@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, dialog, globalShortcut } = require('electron');
+const { app, BrowserWindow, Menu, Tray, dialog, globalShortcut, ipcMain, screen } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const crypto = require('crypto');
@@ -37,6 +37,29 @@ try {
 
 let mainWindow;
 let overlayWindow;
+let overlayLocked = false;
+let overlayLockShortcut = false;
+
+function setOverlayLocked(locked) {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return false;
+    // Kilit kısayolu alınamadıysa fareyi kilitleme; kullanıcı çıkışsız kalmasın.
+    if (locked && !overlayLockShortcut) return false;
+    overlayLocked = Boolean(locked);
+    overlayWindow.setIgnoreMouseEvents(overlayLocked, {forward: true});
+    overlayWindow.setFocusable(!overlayLocked);
+    overlayWindow.webContents.send('overlay-state', {locked: overlayLocked, lockShortcut: overlayLockShortcut});
+    return true;
+}
+
+ipcMain.handle('overlay-control', (event, action) => {
+    const sender = event.sender;
+    if (![mainWindow?.webContents, overlayWindow?.webContents].includes(sender)
+            || event.senderFrame !== sender.mainFrame) return {success: false};
+    if (action === 'open') { createOverlayWindow(); return {success: Boolean(overlayWindow)}; }
+    if (action === 'lock') return {success: setOverlayLocked(!overlayLocked), locked: overlayLocked};
+    if (action === 'close' && sender === overlayWindow?.webContents) overlayWindow.close();
+    return {success: true, locked: overlayLocked, lockShortcut: overlayLockShortcut};
+});
 let pythonProcess;
 let tray;
 let serverReady = false;
@@ -321,20 +344,30 @@ function createOverlayWindow() {
         return;
     }
     if (overlayWindow && !overlayWindow.isDestroyed()) {
-        overlayWindow.show();
-        overlayWindow.focus();
+        setOverlayLocked(false);
+        overlayWindow.showInactive();
         return;
     }
     overlayWindow = null;
 
     const savedOverlayState = store ? store.get('overlayState', {
-        width: 380, height: 260, x: undefined, y: undefined
-    }) : { width: 380, height: 260, x: undefined, y: undefined };
+        width: 520, height: 240, x: undefined, y: undefined
+    }) : { width: 520, height: 240, x: undefined, y: undefined };
+    const area = screen.getPrimaryDisplay().workArea;
+    const width = Math.min(area.width, Math.max(320, Number(savedOverlayState.width) || 520));
+    const height = Math.min(area.height, Math.max(220, Number(savedOverlayState.height) || 240));
+    // Ekran çıkarıldıysa pencere kaybolmasın; yalnız görünür kayıtlı konumu kullan.
+    const visible = screen.getAllDisplays().some(d => Number.isFinite(savedOverlayState.x)
+        && Number.isFinite(savedOverlayState.y) && savedOverlayState.x >= d.workArea.x
+        && savedOverlayState.y >= d.workArea.y && savedOverlayState.x + width <= d.workArea.x + d.workArea.width
+        && savedOverlayState.y + height <= d.workArea.y + d.workArea.height);
 
     overlayWindow = new BrowserWindow({
-        ...savedOverlayState,
-        minWidth: 260,
-        minHeight: 160,
+        width, height,
+        x: visible ? savedOverlayState.x : area.x + Math.round((area.width - width) / 2),
+        y: visible ? savedOverlayState.y : area.y + area.height - height - 48,
+        minWidth: 320,
+        minHeight: 220,
         frame: false,
         alwaysOnTop: true,
         transparent: true,
@@ -347,11 +380,14 @@ function createOverlayWindow() {
             preload: path.join(__dirname, 'preload.js')
         }
     });
+    overlayLocked = false;
+    overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+    overlayLockShortcut = globalShortcut.register('CommandOrControl+Shift+L', () => setOverlayLocked(!overlayLocked));
 
     restrictWindowNavigation(overlayWindow.webContents, `http://localhost:${PORT}`);
     overlayWindow.loadURL(`http://localhost:${PORT}/overlay`);
     overlayWindow.once('ready-to-show', () => {
-        if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.show();
+        if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive();
     });
 
     overlayWindow.on('close', () => {
@@ -365,6 +401,9 @@ function createOverlayWindow() {
         }
     });
     overlayWindow.on('closed', () => {
+        if (overlayLockShortcut) globalShortcut.unregister('CommandOrControl+Shift+L');
+        overlayLockShortcut = false;
+        overlayLocked = false;
         overlayWindow = null;
     });
 }
@@ -688,8 +727,7 @@ function createMenu() {
                     }
                 },
                 {
-                    label: 'Toggle Overlay',
-                    accelerator: 'CmdOrCtrl+Shift+O',
+                    label: 'Oyun Çevirisi Göster/Gizle (Ctrl+Shift+O)',
                     click: () => toggleOverlayWindow()
                 },
                 { type: 'separator' },
@@ -814,7 +852,10 @@ if (!gotSingleInstanceLock) {
             mainWindow.focus();
         }
     });
-    app.on('ready', createWindow);
+    app.on('ready', () => {
+        createWindow();
+        globalShortcut.register('CommandOrControl+Shift+O', toggleOverlayWindow);
+    });
 }
 
 app.on('window-all-closed', () => {

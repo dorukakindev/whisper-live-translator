@@ -5345,6 +5345,7 @@ def clear_transcriptions():
         transcriber.stats['total_transcriptions'] = 0
         transcriber.context_buffer.clear()  # Context buffer'ı da temizle
         transcriber.conversation_turns.clear()  # AI cevap-baglami hafizasi da sifirlanir
+        socketio.emit('transcriptions_cleared', {'instance_id': INSTANCE_ID})
         # Audio kuyruğunu temizle
         while not transcriber.audio_queue.empty():
             try:

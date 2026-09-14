@@ -249,18 +249,64 @@
             }
         }
     </style>
+    <style>
+        body { --hud-opacity: .94; --hud-font: 24px; background: color-mix(in srgb, var(--wp-canvas) calc(var(--hud-opacity) * 100%), transparent); border-radius: 14px; }
+        #dragHeader { font-family: inherit; font-size: 11px; text-transform: none; letter-spacing: .02em; padding: 8px 14px; }
+        .hud-brand { display: flex; align-items: center; gap: 6px; }
+        .hud-brand strong { color: var(--text-main); font-weight: 650; }
+        #hudConnection { font-size: 10px; color: var(--text-secondary); }
+        #body { padding: 14px 18px; gap: 10px; min-height: 0; }
+        .translation-text { order: -1; padding: 0; border: 0; background: none; color: var(--text-main); font-size: var(--hud-font); font-weight: 600; line-height: 1.38; letter-spacing: -.02em; }
+        .transcript-text { color: var(--text-secondary); font-size: 13px; line-height: 1.45; }
+        .translation-pending { color: var(--text-secondary); font-size: 16px; font-weight: 400; }
+        .hud-footer { border-top: 1px solid var(--border-color); padding: 8px 14px; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-shrink: 0; font-size: 10px; color: var(--text-secondary); }
+        .hud-footer button, .hud-settings button { background: var(--bg-raised); color: var(--text-main); border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 8px; cursor: pointer; font: inherit; }
+        button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+        .hud-settings { padding: 8px 14px; flex-shrink: 0; border-top: 1px solid var(--border-color); font-size: 11px; color: var(--text-secondary); }
+        .hud-settings summary { cursor: pointer; }
+        .hud-settings .controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-top: 10px; }
+        .hud-settings label { display: flex; align-items: center; gap: 6px; }
+        .hud-settings input[type=range] { width: 90px; accent-color: var(--primary); }
+        .hud-settings p { font-size: 10px; line-height: 1.5; margin: 8px 0 0; }
+        body.hide-original .transcript-text { display: none; }
+        body.game-locked .hud-settings, body.game-locked #closeBtn, body.game-locked #aiBtn { display: none; }
+        body.game-locked #dragHeader { -webkit-app-region: no-drag; }
+        body.game-locked .transcript-text, body.game-locked #answerArea { display: none; }
+        body.game-locked #dragHeader { min-height: 30px; padding: 5px 12px; }
+        body.game-locked .hud-footer { padding: 4px 10px; font-size: 9px; }
+        body.game-locked .hud-footer button { padding: 2px 4px; border: 0; background: none; font-size: 9px; }
+        body.game-locked #body { padding: 10px 14px; }
+        body.light-mode { background: color-mix(in srgb, var(--wp-canvas) calc(var(--hud-opacity) * 100%), transparent); }
+        @media (max-width: 360px) {
+            body.game-locked .translation-text { font-size: min(var(--hud-font), 18px); line-height: 1.35; }
+            #hudConnection { font-size: 9px; }
+        }
+        #aiBtn { font-size: 10px; padding: 4px 8px; min-height: 26px; background: transparent; color: var(--text-secondary); border-color: var(--border-color); }
+        .empty-hint { text-align: left; margin: auto 0; line-height: 1.65; font-size: 13px; }
+        .empty-hint strong { display: block; font-size: 19px; font-weight: 600; color: var(--text-main); margin-bottom: 6px; }
+    </style>
 </head>
 
 <body>
     <div id="dragHeader">
-        <span><span class="status-dot" id="statusDot"></span>Whisper Pro / Live</span>
+        <span class="hud-brand"><span class="status-dot" id="statusDot"></span><strong>Whisper Pro</strong><span id="hudConnection">Bağlanıyor…</span></span>
         <button id="closeBtn" onclick="window.close()" title="Kapat" aria-label="Overlay penceresini kapat">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg>
         </button>
     </div>
     <div id="body">
-        <div class="empty-hint" id="emptyHint">Konuşma bekleniyor…</div>
+        <div class="empty-hint" id="emptyHint"><strong>Oyun senin, çeviri burada.</strong>Ana pencerede Sistem sesi ve çeviriyi açıp Başlat’a bas. Duyulan konuşmanın çevirisi burada belirecek.</div>
     </div>
+    <details class="hud-settings" id="hudSettings">
+        <summary>Görünüm ve kullanım</summary>
+        <div class="controls">
+            <label>Yazı <input id="hudFont" type="range" min="18" max="36" value="24" oninput="saveHudAppearance()"></label>
+            <label>Zemin <input id="hudOpacity" type="range" min="40" max="100" value="94" oninput="saveHudAppearance()"></label>
+            <label><input id="hudOriginal" type="checkbox" checked onchange="saveHudAppearance()"> Orijinal metin</label>
+        </div>
+        <p>Başlıktan taşı, kenardan boyutlandır. Ctrl+Shift+O: göster/gizle. Ctrl+Shift+L: oyun kilidi; yalnız çeviri görünür. Kenarlıksız pencere modu önerilir.</p>
+    </details>
+    <footer class="hud-footer"><span id="hudMode" role="status">Kutuyu yerleştir, sonra kilitle</span><button id="lockBtn" type="button" onclick="toggleGameLock()">Oyuna kilitle</button></footer>
 
     <script>
         // Bu overlay ANA PENCEREDEN BAĞIMSIZ bir Electron BrowserWindow'da çalışır
@@ -292,10 +338,51 @@
         let lastTranscriptText = '';
         let backendInstanceId = null;
         let overlayHydrationGeneration = 0;
+        let lastTranscriptRevision = 0;
+
+        function saveHudAppearance() {
+            const font = Math.min(36, Math.max(18, Number(document.getElementById('hudFont').value) || 24));
+            const opacity = Math.min(100, Math.max(40, Number(document.getElementById('hudOpacity').value) || 94));
+            const original = document.getElementById('hudOriginal').checked;
+            document.body.style.setProperty('--hud-font', font + 'px');
+            document.body.style.setProperty('--hud-opacity', String(opacity / 100));
+            document.body.classList.toggle('hide-original', !original);
+            whisperStorage.setItem('gameOverlayAppearance', JSON.stringify({font, opacity, original}));
+        }
+        try {
+            const saved = JSON.parse(whisperStorage.getItem('gameOverlayAppearance') || '{}');
+            document.getElementById('hudFont').value = saved.font || 24;
+            document.getElementById('hudOpacity').value = saved.opacity || 94;
+            document.getElementById('hudOriginal').checked = saved.original !== false;
+        } catch (_) { /* Bozuk görünüm tercihi varsayılana döner. */ }
+        saveHudAppearance();
+
+        function applyGameLock(state) {
+            document.body.classList.toggle('game-locked', Boolean(state.locked));
+            document.getElementById('lockBtn').textContent = state.locked ? 'Kilitli · Ctrl+Shift+L' : 'Oyuna kilitle';
+            document.getElementById('hudMode').textContent = state.locked ? 'Tıklamalar oyuna geçiyor' : 'Kutuyu yerleştir, sonra kilitle';
+            if (state.locked) document.getElementById('hudSettings').open = false;
+        }
+        async function toggleGameLock() {
+            if (!window.electronAPI?.overlayControl) return;
+            try {
+                const state = await window.electronAPI.overlayControl('lock');
+                if (!state.success) { document.getElementById('hudMode').textContent = 'Ctrl+Shift+L başka uygulamada kullanılıyor'; return; }
+                applyGameLock(state);
+            } catch (_) { document.getElementById('hudMode').textContent = 'Kilit değiştirilemedi; tekrar dene'; }
+        }
+        if (window.electronAPI?.overlayControl) {
+            window.electronAPI.onOverlayState(applyGameLock);
+            window.electronAPI.overlayControl('state').then(applyGameLock).catch(() => {});
+        } else {
+            document.getElementById('lockBtn').disabled = true;
+            document.getElementById('hudMode').textContent = 'Oyun üstünde kullanmak için masaüstü uygulamasından aç';
+        }
 
         function setConnected(connected) {
             const dot = document.getElementById('statusDot');
             if (dot) dot.classList.toggle('connected', connected);
+            document.getElementById('hudConnection').textContent = connected ? 'Canlı çeviri' : 'Bağlantı kesildi';
         }
 
         function renderBody(html) {
@@ -306,7 +393,8 @@
         function clearTranscript() {
             lastTranscriptId = null;
             lastTranscriptText = '';
-            renderBody('<div class="empty-hint" id="emptyHint">Konuşma bekleniyor…</div>');
+            lastTranscriptRevision = 0;
+            renderBody('<div class="empty-hint" id="emptyHint"><strong>Konuşma bekleniyor</strong>Sistem sesini ve çeviriyi ana pencereden başlat.</div>');
         }
 
         function updateTranslation(translation) {
@@ -314,6 +402,7 @@
             const el = document.querySelector('#body .translation-text');
             if (el) {
                 el.textContent = translation;
+                el.classList.remove('translation-pending');
                 return;
             }
             const transcriptEl = document.querySelector('#body .transcript-text');
@@ -326,6 +415,7 @@
         }
 
         function renderTranscript(data) {
+            if (!data || ['mic', 'ptt'].includes(data.source)) return;
             if (data.instance_id && backendInstanceId
                     && data.instance_id !== backendInstanceId) {
                 clearTranscript();
@@ -333,21 +423,30 @@
             if (data.instance_id) backendInstanceId = data.instance_id;
             if (lastTranscriptId !== null && Number(data.id) < Number(lastTranscriptId)) return;
             if (lastTranscriptId !== null && Number(data.id) === Number(lastTranscriptId)) {
-                updateTranslation(data.translation);
-                return;
+                if ((data.revision || 0) < lastTranscriptRevision) return;
+                if ((data.revision || 0) === lastTranscriptRevision) { updateTranslation(data.translation); return; }
             }
             document.getElementById('emptyHint')?.remove();
             lastTranscriptId = data.id;
             lastTranscriptText = data.text || '';
+            lastTranscriptRevision = data.revision || 0;
             const translationHtml = data.translation
                 ? `<div class="translation-text">${escapeHtml(data.translation)}</div>`
-                : '';
+                : '<div class="translation-text translation-pending" role="status">Çeviri bekleniyor…</div>';
             renderBody(`
                 <div class="transcript-text">${escapeHtml(lastTranscriptText)}</div>
                 ${translationHtml}
                 <button id="aiBtn" onclick="requestAnswer()">Cevap Önerisi</button>
                 <div id="answerArea"></div>
             `);
+            updateTranslationState(data.translation_status);
+        }
+
+        function updateTranslationState(status) {
+            const el = document.querySelector('.translation-pending');
+            if (!el) return;
+            const labels = {failed: 'Çeviri alınamadı · ana pencerede tekrar dene', skipped: 'Çeviri atlandı', pending: 'Çeviri sırada…', translating: 'Çevriliyor…'};
+            el.textContent = labels[status] || 'Çeviri için ana pencerede çeviriyi aç';
         }
 
         function requestAnswer() {
@@ -355,6 +454,7 @@
             const requestTranscriptId = lastTranscriptId;
             const requestTranscriptText = lastTranscriptText;
             const requestInstanceId = backendInstanceId;
+            const requestRevision = lastTranscriptRevision;
             const btn = document.getElementById('aiBtn');
             if (btn) { btn.disabled = true; btn.textContent = 'Yükleniyor…'; }
             fetch('/api/generate_ai_response', {
@@ -374,7 +474,7 @@
                 .then(data => {
                     // Istek A icin beklerken transkript B geldiyse A'nin cevabini
                     // yeni kartin altina yazma. Eski buton zaten DOM'dan cikmistir.
-                    if (requestTranscriptId !== lastTranscriptId
+                    if (requestRevision !== lastTranscriptRevision || requestTranscriptId !== lastTranscriptId
                             || requestInstanceId !== backendInstanceId) return;
                     if (btn) { btn.disabled = false; btn.textContent = 'Cevap Önerisi'; }
                     const area = document.getElementById('answerArea');
@@ -396,7 +496,7 @@
                 })
                 .catch(err => {
                     console.error('overlay answer hatası:', err);
-                    if (requestTranscriptId !== lastTranscriptId
+                    if (requestRevision !== lastTranscriptRevision || requestTranscriptId !== lastTranscriptId
                             || requestInstanceId !== backendInstanceId) return;
                     if (btn) { btn.disabled = false; btn.textContent = 'Cevap Önerisi'; }
                 });
@@ -430,12 +530,24 @@
                 setConnected(true);
                 hydrateLatestTranscript();
             });
-            socket.on('disconnect', () => setConnected(false));
+            socket.on('disconnect', () => { overlayHydrationGeneration++; setConnected(false); });
             socket.on('new_transcription', (data) => {
-                if (data && data.source !== 'mic') renderTranscript(data);
+                overlayHydrationGeneration++;
+                if (data && !['mic', 'ptt'].includes(data.source)) renderTranscript(data);
             });
+            socket.on('transcription_corrected', data => {
+                if (data?.instance_id && backendInstanceId && data.instance_id !== backendInstanceId) return;
+                overlayHydrationGeneration++;
+                renderTranscript(data);
+            });
+            socket.on('transcription_translation_status', data => {
+                if (data && String(data.id) === String(lastTranscriptId) && (data.revision || 0) === lastTranscriptRevision) updateTranslationState(data.status);
+            });
+            socket.on('transcriptions_cleared', () => { overlayHydrationGeneration++; clearTranscript(); });
+            socket.on('capture_stopped', () => { document.getElementById('hudConnection').textContent = 'Dinleme durdu'; });
+            socket.on('capture_started', () => { document.getElementById('hudConnection').textContent = 'Canlı çeviri'; });
             socket.on('transcription_translation', (data) => {
-                if (!data || data.id !== lastTranscriptId) return;
+                if (!data || String(data.id) !== String(lastTranscriptId) || (data.revision || 0) !== lastTranscriptRevision) return;
                 updateTranslation(data.translation);
             });
         }

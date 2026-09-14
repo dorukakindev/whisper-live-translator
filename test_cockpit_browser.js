@@ -448,7 +448,7 @@ app.whenReady().then(async () => {
     fs.writeFileSync(path.join(outputDir, '600x800-reply.png'), (await win.webContents.capturePage()).toPNG());
     // Yardımcı pencere aynı renk tokenlarını kullanır; kapanış platform işidir.
     let overlay = fs.readFileSync(path.join(__dirname, 'templates', 'overlay.html'), 'utf8');
-    overlay = overlay.replace('<script src="/static/socket.io.min.js"></script>', '<script>function io(){return {on(){}};}</script>');
+    overlay = overlay.replace('<script src="/static/socket.io.min.js"></script>', '<script>window.overlayEvents={};function io(){return {on(name,fn){overlayEvents[name]=fn;}};}</script>');
     for (const name of ['runtime-safety.js', 'html-utils.js']) overlay = overlay.replace(`<script src="/static/${name}"></script>`, `<script>${fs.readFileSync(path.join(__dirname,'static',name),'utf8')}</script>`);
     overlay = overlay.replace('<link rel="stylesheet" href="/static/whisper-pro-theme.css">', `<style>${fs.readFileSync(path.join(__dirname,'static','whisper-pro-theme.css'),'utf8')}</style>`).replace('{{ app_token|tojson }}','"fixture-token"');
     const overlayPath = path.join(outputDir, 'overlay.html');
@@ -460,6 +460,37 @@ app.whenReady().then(async () => {
     assert.strictEqual(overlayColor, '#7296ff');
     await new Promise(resolve => setTimeout(resolve, 250));
     fs.writeFileSync(path.join(outputDir, '480x520-overlay.png'), (await win.webContents.capturePage()).toPNG());
+    const gameChecks = await win.webContents.executeJavaScript(`(() => {
+        renderTranscript({id:2,source:'system',instance_id:'game',revision:0,text:'Watch the left flank!',translation:'Sol kanada dikkat et!'});
+        overlayEvents.new_transcription({id:3,source:'ptt',text:'Kendi mikrofonum'});
+        const ownIgnored=lastTranscriptId===2;
+        overlayEvents.transcription_corrected({id:2,instance_id:'game',revision:1,text:'Watch the right flank!',translation_status:'pending'});
+        overlayEvents.transcription_translation({id:2,revision:0,translation:'ESKİ'});
+        const staleIgnored=!document.getElementById('body').textContent.includes('ESKİ');
+        overlayEvents.transcription_translation_status({id:2,revision:1,status:'failed'});
+        const failedVisible=document.querySelector('.translation-text').textContent.includes('alınamadı');
+        overlayEvents.transcription_translation({id:2,revision:1,translation:'Sağ kanada dikkat et! Siper alın, arkadan geliyorlar.'});
+        const translated=document.querySelector('.translation-text').textContent.includes('Sağ kanada');
+        applyGameLock({locked:true});
+        const locked=document.body.classList.contains('game-locked') && document.getElementById('hudMode').textContent.includes('oyuna');
+        applyGameLock({locked:false});
+        document.getElementById('hudOriginal').checked=false;saveHudAppearance();
+        const originalHidden=getComputedStyle(document.querySelector('.transcript-text')).display==='none';
+        document.getElementById('hudOriginal').checked=true;saveHudAppearance();
+        overlayEvents.transcriptions_cleared({});
+        const cleared=lastTranscriptId===null && !!document.getElementById('emptyHint');
+        renderTranscript({id:4,source:'system',instance_id:'game',text:'Watch the right flank! Take cover, they are coming from behind.',translation:'Sağ kanada dikkat et! Siper alın, arkadan geliyorlar.'});
+        setConnected(true);
+        return {ownIgnored,staleIgnored,failedVisible,translated,locked,originalHidden,cleared};
+    })()`);
+    assert(Object.values(gameChecks).every(Boolean), JSON.stringify(gameChecks));
+    win.setSize(520, 300);
+    await new Promise(resolve => setTimeout(resolve, 250));
+    fs.writeFileSync(path.join(outputDir, '520x300-game-overlay.png'), (await win.webContents.capturePage()).toPNG());
+    win.setSize(320, 220);
+    await win.webContents.executeJavaScript(`applyGameLock({locked:true});`);
+    await new Promise(resolve => setTimeout(resolve, 250));
+    fs.writeFileSync(path.join(outputDir, '320x220-game-locked.png'), (await win.webContents.capturePage()).toPNG());
     win.close();
     console.log('Gercek Chromium Cockpit davranis ve gorsel testleri gecti:', outputDir);
     app.quit();
