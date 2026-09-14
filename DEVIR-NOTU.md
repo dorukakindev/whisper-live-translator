@@ -2,9 +2,11 @@
 
 Yeni oturum ve format sonrası kurulum: [BASLANGIC.md](BASLANGIC.md)
 
-Güncel devir notu: [2026-09-14 12:18 — Dört görüşme aracı](docs/devir/2026-09-14-1218.md)
+Güncel devir notu: [2026-09-14 13:04 — Canlı ses ve çeviride altı geliştirme](docs/devir/2026-09-14-1304.md)
 
 ## Arşiv
+
+- [2026-09-14 13:04 — Canlı ses ve çeviride altı geliştirme](docs/devir/2026-09-14-1304.md)
 
 - [2026-09-14 12:18 — Dört görüşme aracı](docs/devir/2026-09-14-1218.md)
 

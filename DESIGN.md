@@ -92,4 +92,10 @@ Kullanıcının istediği dört araç ana ekrana eklendi. Kendi cevabını yaz v
 
 Hızlı kalıplar ayarlardan ana ekrana taşındı. Dile göre mevcut üretilmiş okunuşlar korunur; seçmek ağ isteği yapmadan ortak kartı açar. Dinleme, kopyalama ve kaydetme ortak kartın eylemleridir. Öneri uzunluğu native select ile Kısa/Normal/Detaylı seçilir, yalnız bu tercih yerel depoda saklanır. Hedefler yaklaşık 3–8 / 8–20 / 20–45 kelime olup iki paralel AI isteğine uygulanır; yazılı çeviri metni özetlenmez.
 
-Görüşmeye hazırlık açıldığında model ve AI durumu sunucudan alınır; ses satırı seçili cihazı gösterir, gerçek ses sinyali testi olduğunu iddia etmez. Doğrulanmamış anahtar hazır sayılmaz. Eksik satır ilgili mevcut ayara odaklanır. Yeniden kontrol hata/bekleme durumları yazılıdır. Native details ve select klavye davranışları korunur. Yeni kontrol renkleri mevcut --wp-* tokenlarını kullanır; sağ panel tüm araçlar ve cevap için tek kaydırma sahibidir.
+Görüşmeye hazırlık açıldığında model ve AI durumu sunucudan alınır; ses satırı seçili cihazı gösterir. Ayrı Ses testi düğmesi kısa PCM ölçümü yapar; sessiz WASAPI cihazından örnek gelmemesi bağlantı arızası sayılmaz. Doğrulanmamış anahtar hazır sayılmaz. Eksik satır ilgili mevcut ayara odaklanır. Yeniden kontrol hata/bekleme durumları yazılıdır. Native details ve select klavye davranışları korunur. Yeni kontrol renkleri mevcut --wp-* tokenlarını kullanır; sağ panel tüm araçlar ve cevap için tek kaydırma sahibidir.
+
+## Canlı ses ve metin akışı
+
+Uyarlanabilir duraklama ve önceki üç konuşmayı çeviriye bağlam olarak verme hazırlık bölümünden açılıp kapanır; başlangıçta açıktır. Canlı taslak aynı DOM öğesinde güncellenir ve kesinleşmediği yazıyla belirtilir. Geçmişi okuyan kişinin görünür satırı yeni metin/çeviri geldiğinde korunur; Canlıya dön en yeni satıra taşır.
+
+Karşı tarafın metni yerinde düzenlenir. Ağ hatası taslağı silmez; başka penceredeki düzeltmeyle çakışmada güncel sürüm gösterilir, kullanıcı taslağı korunur. Kaydetme yeni çeviri ve varsa ilgili cevap önerilerini yeniler. Eski sürümün sonuçları gösterilmez. İşlem ayrıntıları konuşmanın bitmesini bekleme, yazıya dökme, çeviri servisi ve kuyruk sayılarını sunar; ölçülmeyen ağ gecikmesi hakkında iddiada bulunmaz. Kontroller ortak renk ve odak tokenlarını kullanır.
