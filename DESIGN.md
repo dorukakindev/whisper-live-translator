@@ -96,6 +96,8 @@ Görüşmeye hazırlık açıldığında model ve AI durumu sunucudan alınır; 
 
 ## Canlı ses ve metin akışı
 
+Düzeltme formu açıldığı backend oturumuna bağlıdır. Yeniden başlatma sonrası aynı numara başka bir kayda verilse bile eski form yeni kaydı değiştiremez; sunucu işlemi reddeder ve güncel konuşmayı açmayı ister.
+
 Uyarlanabilir duraklama ve önceki üç konuşmayı çeviriye bağlam olarak verme hazırlık bölümünden açılıp kapanır; başlangıçta açıktır. Canlı taslak aynı DOM öğesinde güncellenir ve kesinleşmediği yazıyla belirtilir. Geçmişi okuyan kişinin görünür satırı yeni metin/çeviri geldiğinde korunur; Canlıya dön en yeni satıra taşır.
 
 Karşı tarafın metni yerinde düzenlenir. Ağ hatası taslağı silmez; başka penceredeki düzeltmeyle çakışmada güncel sürüm gösterilir, kullanıcı taslağı korunur. Kaydetme yeni çeviri ve varsa ilgili cevap önerilerini yeniler. Eski sürümün sonuçları gösterilmez. İşlem ayrıntıları konuşmanın bitmesini bekleme, yazıya dökme, çeviri servisi ve kuyruk sayılarını sunar; ölçülmeyen ağ gecikmesi hakkında iddiada bulunmaz. Kontroller ortak renk ve odak tokenlarını kullanır.
