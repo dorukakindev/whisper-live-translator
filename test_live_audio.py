@@ -18,12 +18,20 @@ klass = next(n for n in tree.body if isinstance(n, ast.ClassDef)
              and n.name == 'WhisperWebTranscriber')
 capture_node = next(n for n in klass.body if isinstance(n, ast.FunctionDef)
                     and n.name == '_capture_audio')
+split_node = next(n for n in klass.body if isinstance(n, ast.FunctionDef)
+                  and n.name == '_find_quiet_split_index')
 namespace = dict(np=np, deque=deque, time=time, re=re,
                  analyze_pcm16=analyze_pcm16, adaptive_silence_seconds=adaptive_silence_seconds,
                  logger=logging.getLogger('live-audio-test'))
-exec(compile(ast.Module(body=[join_node, capture_node], type_ignores=[]),
+exec(compile(ast.Module(body=[join_node, capture_node, split_node], type_ignores=[]),
              'buyedektir.py', 'exec'), namespace)
 join = namespace['_join_transcription_segments']
+split = namespace['_find_quiet_split_index']
+split_owner = SimpleNamespace(SPLIT_SEARCH_S=2)
+assert split(split_owner, [np.array([100], dtype=np.int16),
+                          np.array([-32768], dtype=np.int16),
+                          np.array([0], dtype=np.int16)], .03) == 2, \
+    'En yüksek negatif genlik sessiz bölge sayılmamalı'
 assert join([SimpleNamespace(text=s) for s in ['Bugün', 'toplantıya gelemem.']]) == 'Bugün toplantıya gelemem.'
 assert join([SimpleNamespace(text=s) for s in ['Merhaba.', 'Nasılsın?']]) == 'Merhaba. Nasılsın?'
 assert join([SimpleNamespace(text=s) for s in ['こんにちは', '。']]) == 'こんにちは。'

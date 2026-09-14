@@ -3553,7 +3553,8 @@ class WhisperWebTranscriber:
         quietest_idx = start
         quietest_energy = None
         for i in range(start, n):
-            energy = float(np.abs(audio_buffer[i]).mean())
+            # int16 -32768 mutlak değeri aynı tipte taşar; gürültüyü sessizlik sanma.
+            energy = float(np.abs(np.asarray(audio_buffer[i], dtype=np.float64)).mean())
             if quietest_energy is None or energy < quietest_energy:
                 quietest_energy = energy
                 quietest_idx = i
@@ -5249,7 +5250,8 @@ def correct_transcription(transcript_id):
         transcriber.context_buffer.extend(r['text'] for r in list(transcriber.transcriptions)[-10:]
                                          if r.get('source') != 'ptt' and r.get('text'))
         snapshot = transcriber.translator.snapshot_request(
-            source_lang=record.get('model_language') or 'AUTO', target_lang=record.get('target_lang') or 'TR')
+            source_lang=record.get('source_lang') or record.get('model_language') or 'AUTO',
+            target_lang=record.get('target_lang') or 'TR')
         snapshot['user_initiated'] = True
         snapshot['conversation_context'] = transcriber._translation_context_unlocked(transcript_id)
         snapshot['glossary_note'] = transcriber.get_glossary_prompt(snapshot['target_lang'], False)
@@ -5261,8 +5263,15 @@ def correct_transcription(transcript_id):
                 text, snapshot, session, generation, None, revision + 1)
         except RuntimeError:
             record['translation_status'] = 'failed'
+            socketio.emit('transcription_translation_status', {
+                'id': transcript_id, 'status': 'failed', 'revision': revision + 1})
         result = dict(record)
-    _append_transcript(f"    Düzeltme [#{transcript_id} v{revision + 1}]: {text}\n")
+    try:
+        _append_transcript(f"    Düzeltme [#{transcript_id} v{revision + 1}]: {text}\n")
+    except OSError:
+        # Bellek ve çeviri işi zaten güncellendi; dosya hatası yeniden kayda zorlamasın.
+        _record_health_error('transcript_write_failed')
+        logger.warning('Düzeltme uygulandı ancak transkript günlüğüne yazılamadı.')
     return jsonify({'success': True, 'record': result})
 
 

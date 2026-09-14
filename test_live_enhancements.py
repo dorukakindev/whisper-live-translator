@@ -92,6 +92,35 @@ class LiveEnhancementTests(unittest.TestCase):
                 self.assertEqual(self.t.transcriptions[0], before)
                 self.assertFalse(self.t.translate_executor.jobs)
 
+    def test_correction_keeps_selected_source_language(self):
+        self.t.transcriptions[0]['source_lang'] = 'EN'
+        captured = []
+        self.t.translator.snapshot_request = lambda **kw: captured.append(kw) or dict(kw)
+        response = self.client.post('/api/transcriptions/7/correct', json={
+            'text': 'corrected English', 'revision': 0})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(captured[0]['source_lang'], 'EN')
+
+    def test_correction_queue_failure_is_broadcast(self):
+        with patch.object(self.t.translate_executor, 'submit', side_effect=RuntimeError('closed')), \
+                patch.object(buyedektir.socketio, 'emit') as emit:
+            response = self.client.post('/api/transcriptions/7/correct', json={
+                'text': 'yeni söz', 'revision': 0})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json['record']['translation_status'], 'failed')
+        events = [call.args[1] for call in emit.call_args_list
+                  if call.args[0] == 'transcription_translation_status']
+        self.assertEqual(events, [{'id': 7, 'status': 'failed', 'revision': 1}])
+
+    def test_correction_log_failure_does_not_undo_success(self):
+        with patch.object(buyedektir, '_append_transcript', side_effect=OSError('disk full')):
+            response = self.client.post('/api/transcriptions/7/correct', json={
+                'text': 'yeni söz', 'revision': 0})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json['success'])
+        self.assertEqual(response.json['record']['revision'], 1)
+        self.assertEqual(len(self.t.translate_executor.jobs), 1)
+
     def test_stale_translation_skips_provider_before_and_after_call(self):
         calls = []
         self.t.transcriptions[0]['revision'] = 1
