@@ -2,9 +2,11 @@
 
 Yeni oturum ve format sonrası kurulum: [BASLANGIC.md](BASLANGIC.md)
 
-Güncel devir notu: [2026-09-14 14:04 — Format öncesi devir doğrulaması](docs/devir/2026-09-14-1404.md)
+Güncel devir notu: [2026-09-14 14:20 — Oyun üstü canlı çeviri kutusu](docs/devir/2026-09-14-1420.md)
 
 ## Arşiv
+
+- [2026-09-14 14:20 — Oyun üstü canlı çeviri kutusu](docs/devir/2026-09-14-1420.md)
 
 - [2026-09-14 14:04 — Format öncesi devir doğrulaması](docs/devir/2026-09-14-1404.md)
 

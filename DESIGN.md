@@ -96,6 +96,12 @@ Görüşmeye hazırlık açıldığında model ve AI durumu sunucudan alınır; 
 
 ## Canlı ses ve metin akışı
 
+### Oyun çeviri kutusu
+
+Ana pencerenin Oyun çevirisi düğmesi aynı backend'in `/overlay` penceresini açar. Varsayılan 520×240, en küçük 320×220; ekran dışındaki kayıtlı konum görünür alana taşınır. Pencere odağı çalmadan açılır. Büyük çeviri birincil, küçük orijinal metin ikincildir; kaynak sistem sesidir, mic/PTT olayları gösterilmez. Önceki tema tokenları korunur; zemin saydamlığı ve 18–36 px yazı tercihi yerel saklanır.
+
+Ctrl+Shift+O göster/gizle, Ctrl+Shift+L oyun kilididir. Kilit fareyi oyuna geçirir ve pencereyi odaklanamaz yapar; açılınca görünüm/taşıma kontrolleri geri gelir. Kilit kısayolu kaydedilemezse kilitleme reddedilir. Kilitli modda yalnız çeviri görünür, dar boyutta yazı en çok 18 px olur; kontroller alanı küçülür. Çok uzun çeviriler için kutu büyütülebilir veya yazı küçültülebilir. Ayar/yardım alanı başlangıçta kapalıdır. Backend sıfırlaması, düzeltme sürümü, geç gelen çeviri ve PTT ayrımı ortak kayıt sözleşmesine uyar. Exclusive fullscreen desteği garanti edilmez; kenarlıksız pencere modu önerilir. Harici DLL enjeksiyonu/hook yoktur.
+
 Düzeltme formu açıldığı backend oturumuna bağlıdır. Yeniden başlatma sonrası aynı numara başka bir kayda verilse bile eski form yeni kaydı değiştiremez; sunucu işlemi reddeder ve güncel konuşmayı açmayı ister.
 
 Uyarlanabilir duraklama ve önceki üç konuşmayı çeviriye bağlam olarak verme hazırlık bölümünden açılıp kapanır; başlangıçta açıktır. Canlı taslak aynı DOM öğesinde güncellenir ve kesinleşmediği yazıyla belirtilir. Geçmişi okuyan kişinin görünür satırı yeni metin/çeviri geldiğinde korunur; Canlıya dön en yeni satıra taşır.
