@@ -81,6 +81,11 @@ class ProfileProtectionTests(unittest.TestCase):
 
 
 class TranslationSequenceTests(unittest.TestCase):
+    def setUp(self):
+        records = patch.object(b.transcriber, 'transcriptions', [{'id': 1, 'text': 'Test'}])
+        records.start()
+        self.addCleanup(records.stop)
+
     def test_ptt_id_gaps_do_not_drop_live_translation(self):
         t = b.transcriber
         with patch.object(t, '_latest_translate_submit_id', 100), patch.object(t, '_latest_translate_sequence', 2), patch.object(t.translator, 'translate', return_value=None) as translate:
@@ -102,7 +107,10 @@ class TranslationSequenceTests(unittest.TestCase):
         with patch.object(t, '_latest_translate_sequence', 1), patch.object(t, 'transcriptions', [entry]), patch.object(t.translator, 'translate', side_effect=slow), patch.object(b.socketio, 'emit', Mock()) as emit:
             t._translate_async(1, 'Test', {}, t._session_id, t._result_generation, 1)
             self.assertNotIn('translation', entry)
-            emit.assert_not_called()
+            self.assertEqual([call.args[0] for call in emit.call_args_list],
+                             ['transcription_translation_status'] * 2)
+            self.assertEqual([call.args[1]['status'] for call in emit.call_args_list],
+                             ['translating', 'skipped'])
 
 
 class TextBoundaryTests(unittest.TestCase):

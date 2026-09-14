@@ -119,7 +119,12 @@ class FollowupRegressions(unittest.TestCase):
         with patch.object(transcriber, 'transcriptions', records), patch.object(transcriber, '_latest_translate_submit_id', 10), patch.object(transcriber.translator, 'translate', side_effect=slow_result), patch.object(b.socketio, 'emit') as emit, patch.object(b, '_append_transcript') as write:
             transcriber._translate_async(10, 'eski', {'target_lang': 'TR'}, transcriber._session_id, transcriber._result_generation)
             self.assertNotIn('translation', records[0])
-            emit.assert_not_called()
+            self.assertTrue(emit.call_args_list)
+            self.assertTrue(all(call.args[0] == 'transcription_translation_status'
+                                for call in emit.call_args_list))
+            self.assertEqual([call.args[1]['status'] for call in emit.call_args_list],
+                             ['translating', 'skipped'])
+            self.assertTrue(all(call.args[1]['id'] == 10 for call in emit.call_args_list))
             write.assert_not_called()
 
     def test_merge_output_does_not_overlap_or_lose_text(self):
