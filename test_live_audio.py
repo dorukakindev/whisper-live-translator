@@ -8,6 +8,7 @@ import threading
 import time
 import re
 import numpy as np
+from audio_diagnostics import analyze_pcm16, adaptive_silence_seconds
 
 
 tree = ast.parse(Path('buyedektir.py').read_text(encoding='utf-8'))
@@ -18,6 +19,7 @@ klass = next(n for n in tree.body if isinstance(n, ast.ClassDef)
 capture_node = next(n for n in klass.body if isinstance(n, ast.FunctionDef)
                     and n.name == '_capture_audio')
 namespace = dict(np=np, deque=deque, time=time, re=re,
+                 analyze_pcm16=analyze_pcm16, adaptive_silence_seconds=adaptive_silence_seconds,
                  logger=logging.getLogger('live-audio-test'))
 exec(compile(ast.Module(body=[join_node, capture_node], type_ignores=[]),
              'buyedektir.py', 'exec'), namespace)
@@ -34,7 +36,7 @@ def capture_case(prefix, speech, vad_fails=False, reset_at=None, ptt=False):
         CHUNK_DURATION_MS=30, RATE=16000, _lifecycle_lock=threading.Lock(),
         _session_id=1, _result_generation=0, is_running=True, is_paused=False, ptt_active=ptt,
         flush_now=False, partial_enabled=False, vad=None, capture_mode='system',
-        _utterance_seq=0, silence_duration=0.09, MAX_UTTERANCE_S=25, MAX_PTT_S=25,
+        _utterance_seq=0, silence_duration=0.09, adaptive_silence=False, MAX_UTTERANCE_S=25, MAX_PTT_S=25,
         last_emit_time=0, EMIT_INTERVAL=0.1,
         _resolve_capture_device=lambda p, d: (0, {'maxInputChannels':1, 'defaultSampleRate':16000, 'name':'Test'}),
         _close_active_audio_stream=lambda: None,

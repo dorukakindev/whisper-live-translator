@@ -27,6 +27,7 @@ const KEEP_FILES = new Set([
   'main_helpers.js',
   'preload.js',
   'buyedektir.py',
+  'audio_diagnostics.py',
   'requirements.txt',
   'package.json',
 ]);

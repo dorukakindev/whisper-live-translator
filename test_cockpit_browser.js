@@ -14,7 +14,7 @@ function fixtureHtml() {
     html = html.replace('<script src="/static/socket.io.min.js"></script>', '');
     html = html.replace('<script src="/static/runtime-safety.js"></script>',
         `<script>${fs.readFileSync(path.join(__dirname, 'static', 'runtime-safety.js'), 'utf8')}</script>`);
-    for (const moduleName of ['html-utils.js', 'cockpit.js', 'reading-mode.js', 'quick-phrases.js']) {
+    for (const moduleName of ['html-utils.js', 'cockpit.js', 'live-flow.js', 'reading-mode.js', 'quick-phrases.js']) {
         html = html.replace(`<script src="/static/${moduleName}"></script>`,
             `<script>${fs.readFileSync(path.join(__dirname, 'static', moduleName), 'utf8')}</script>`);
     }
@@ -286,6 +286,71 @@ app.whenReady().then(async () => {
         return {pending,failed,skipped,completed};
     })()`);
     assert.deepStrictEqual(translationChecks, {pending:true,failed:true,skipped:true,completed:true});
+    const liveChecks = await win.webContents.executeJavaScript(`(async () => {
+        const originalFetch = window.fetch;
+        setupSocketListeners();
+        showPartialPreview({text:'Hello world',stable_text:'Hello',draft_text:'world'});
+        const stableNode = document.querySelector('.partial-stable');
+        showPartialPreview({text:'Hello world again',stable_text:'Hello',draft_text:'world again'});
+        const stableDom = stableNode === document.querySelector('.partial-stable') && stableNode.textContent === 'Hello ';
+        clearPartialPreview();
+        for(let id=1000;id<1020;id++) addTranscription({id,text:'Uzun test konuşması '+id+' — '.repeat(20),source:'system'},true);
+        const list = document.getElementById('transcriptionList');
+        list.scrollTop=450; updateTranscriptFollow();
+        const anchor=[...list.children].find(el=>el.getBoundingClientRect().bottom>list.getBoundingClientRect().top+1);
+        const top=anchor.getBoundingClientRect().top;
+        addTranscription({id:1021,text:'Yeni konuşma geldi. '.repeat(12),source:'system'},true);
+        const anchored = Math.abs(anchor.getBoundingClientRect().top-top)<2 && !document.getElementById('backToLive').hidden;
+        backToLiveTranscript();
+        const follows = list.scrollTop===0 && document.getElementById('backToLive').hidden;
+        const id=1010;
+        _replyTargetId=null;
+        openTranscriptEditor(id);
+        let editor=transcriptNode(id).querySelector('.transcript-editor');
+        editor.querySelector('textarea').value='Düzeltilmiş cümle';
+        let finish, count=0;
+        window.fetch=()=>{count++;return new Promise(resolve=>{finish=resolve;});};
+        const save=saveTranscriptCorrection(id); await saveTranscriptCorrection(id);
+        const duplicateBlocked=count===1 && editor.dataset.busy==='true';
+        finish({ok:false,status:503,json:async()=>({success:false,error:'Bağlantı yok'})}); await save;
+        const draftKept=editor.querySelector('textarea').value==='Düzeltilmiş cümle' && editor.dataset.busy==='false';
+        window.fetch=async()=>({ok:false,status:409,json:async()=>({success:false,record:{id,text:'Başka penceredeki düzeltme',revision:1,translation_status:'pending'}})});
+        await saveTranscriptCorrection(id);
+        const conflict=editor.querySelector('textarea').value==='Düzeltilmiş cümle' && editor.dataset.revision==='1' && transcriptionTexts[id]==='Başka penceredeki düzeltme';
+        let regenerated=0;
+        const originalGet=getAIResponseById;
+        getAIResponseById=()=>{regenerated++;};
+        editor.dataset.refreshAnswer='true';
+        window.fetch=async()=>({ok:true,status:200,json:async()=>({success:true,record:{id,text:'Düzeltilmiş cümle',revision:2,translation_status:'pending'}})});
+        await saveTranscriptCorrection(id);
+        getAIResponseById=originalGet;
+        const saved=transcriptionTexts[id]==='Düzeltilmiş cümle' && !transcriptNode(id).querySelector('.transcript-editor') && regenerated===1;
+        socket._events.transcription_translation({id,revision:0,translation:'ESKİ ÇEVİRİ',target_lang:'TR'});
+        const oldSocketIgnored=!transcriptNode(id).textContent.includes('ESKİ ÇEVİRİ');
+        const btn=transcriptNode(1011).querySelector('.ai-translate-btn');
+        window.fetch=()=>new Promise(resolve=>{finish=resolve;});
+        const ai=getAIResponse(1011,transcriptionTexts[1011],'translate',btn);
+        applyTranscriptCorrection({id:1011,text:'Yeni kaynak',revision:1,translation_status:'pending'});
+        finish({ok:true,json:async()=>({success:true,translation:'GECİKEN YANIT',romanized:'eski'})}); await ai;
+        const oldHttpIgnored=!transcriptNode(1011).textContent.includes('GECİKEN YANIT');
+        renderPipelineStages({capturing:true,capture_phase:'waiting_silence',silence_seconds:.9,asr_active:false,audio_queue:0,translation_active:0,translation_waiting:0});
+        const stages=document.getElementById('pipelineSummary').textContent.includes('bitmesi');
+        document.getElementById('deviceSelect').innerHTML='<option value="0">Test cihazı</option>';
+        window.fetch=async()=>({ok:true,json:async()=>({success:true,live:false,measurement:{status:'quiet',rms_dbfs:-45}})});
+        await runAudioTest();
+        const audio=document.getElementById('audioTestStatus').textContent.includes('çok düşük') && !document.getElementById('audioTestButton').disabled;
+        showAudioDiagnostic({status:'disconnected'});
+        const disconnect=document.getElementById('liveAudioState').textContent.includes('kesildi');
+        window.fetch=originalFetch;
+        return {stableDom,anchored,follows,duplicateBlocked,draftKept,conflict,saved,oldSocketIgnored,oldHttpIgnored,stages,audio,disconnect};
+    })()`);
+    assert(Object.values(liveChecks).every(Boolean), JSON.stringify(liveChecks));
+    win.setSize(1440, 900);
+    await win.loadFile(fixturePath);
+    await win.webContents.executeJavaScript(`window.scrollTo(0,0); backToLiveTranscript(); openTranscriptEditor(1); document.querySelector('.pipeline-details').open=true; renderPipelineStages({capturing:true,capture_phase:'waiting_silence',silence_seconds:.9,asr_active:false,audio_queue:0,translation_active:0,translation_waiting:0}); showAudioDiagnostic({status:'ok',rms_dbfs:-22});`);
+    await new Promise(resolve => setTimeout(resolve, 250));
+    fs.writeFileSync(path.join(outputDir, '1440x900-live-edit.png'), (await win.webContents.capturePage()).toPNG());
+    await win.loadFile(fixturePath);
     const toolsChecks = await win.webContents.executeJavaScript(`(async () => {
         const oldFetch = window.fetch;
         const input = document.getElementById('ownReplyText');

@@ -889,7 +889,7 @@ def test_segment_join_and_speech_onset():
         for name, value in {
                 'is_running': True, '_session_id': 888, 'is_paused': False,
                 'ptt_active': False, 'flush_now': False, 'partial_enabled': False,
-                'silence_duration': 0.09, '_utterance_seq': 0,
+                'silence_duration': 0.09, 'adaptive_silence': False, '_utterance_seq': 0,
                 '_active_audio_stream': None, '_active_audio_p': None}.items():
             stack.enter_context(patch.object(t, name, value))
         stack.enter_context(patch.object(buyedektir.pyaudio, 'PyAudio', return_value=audio))

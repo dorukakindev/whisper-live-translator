@@ -2047,3 +2047,30 @@ body.light-mode .reply-choice[aria-pressed="true"] .reply-choice-number { color:
 .composer-actions button:active, .readiness-items button:active, .quick-phrase-choice:active { transform: translateY(1px); }
 .composer-actions button:disabled, .readiness-items button:disabled { opacity: .55; cursor: wait; transform: none; }
 .conversation-tools, .readiness-panel { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; }
+/* Canlı ses, metin düzeltme ve işlem aşamaları. */
+.audio-test-tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.audio-test-tools span, .flow-preferences, #flowPreferenceStatus { font-size: 12px; color: var(--wp-text-secondary); }
+.flow-preferences { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; }
+.flow-preferences label { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.flow-preferences input { accent-color: var(--wp-accent); }
+.live-flow-strip { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 20px; min-height: 40px; font-size: 12px; background: var(--wp-subtle); }
+#liveAudioState[data-state="clipping"], #liveAudioState[data-state="disconnected"] { color: var(--wp-danger); }
+#liveAudioState[data-state="quiet"] { color: var(--wp-warning); }
+.pipeline-details { padding: 6px 20px 10px; color: var(--wp-text-secondary); font-size: 12px; }
+.pipeline-details summary { cursor: pointer; }
+.pipeline-details summary:hover { color: var(--wp-accent-hover); }
+#pipelineStages { padding-top: 8px; line-height: 1.6; }
+.partial-draft { opacity: .6; }
+.partial-stable { opacity: 1; }
+.transcript-editor { margin-top: 12px; padding: 12px; border: 1px solid var(--wp-border-control); border-radius: 8px; background: var(--wp-subtle); }
+.transcript-editor label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+.transcript-editor textarea { width: 100%; box-sizing: border-box; min-height: 110px; resize: none; border: 1px solid var(--wp-border-control); border-radius: 6px; background: var(--wp-input); color: var(--wp-text); padding: 10px; font: inherit; line-height: 1.5; }
+.transcript-editor [role="status"] { color: var(--wp-text-secondary); font-size: 12px; min-height: 20px; margin-top: 8px; }
+.correction-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.audio-test-tools button, .correction-actions button, #backToLive { appearance: none; cursor: pointer; background: var(--wp-raised); color: var(--wp-text); border: 1px solid var(--wp-border-control); padding: 7px 10px; border-radius: 6px; font: inherit; font-size: 12px; }
+.correction-actions button[type="submit"] { background: var(--wp-accent); color: var(--wp-canvas); }
+.audio-test-tools button:hover, .correction-actions button:hover, #backToLive:hover { border-color: var(--wp-accent); }
+.audio-test-tools button:active, .correction-actions button:active, #backToLive:active { transform: translateY(1px); }
+.audio-test-tools button:disabled, .correction-actions button:disabled { opacity: .5; cursor: wait; }
+.audio-test-tools button:focus-visible, .correction-actions button:focus-visible, #backToLive:focus-visible, .pipeline-details summary:focus-visible { outline: 2px solid var(--wp-accent); outline-offset: 3px; }
+@media (max-width: 600px) { .live-flow-strip { flex-wrap: wrap; padding: 8px 14px; } .pipeline-details { padding-left: 14px; padding-right: 14px; } }

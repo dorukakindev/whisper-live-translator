@@ -1668,7 +1668,10 @@
                 <button type="button" id="readyDevice" onclick="focusSetupTarget('device')">Ses · Cihaz seç</button>
                 <button type="button" id="readyAi" onclick="focusSetupTarget('ai')">AI · Kontrol edilmedi</button>
                 <button type="button" id="readinessRefresh" onclick="refreshReadiness()">Yeniden kontrol et</button>
-            </div><p id="readinessStatus" role="status">Kontrol için aç.</p>
+            </div>
+            <div class="audio-test-tools"><button type="button" id="audioTestButton" onclick="runAudioTest()">Sesi 3 saniye test et</button><span id="audioTestStatus" role="status">Seçili cihazı test et; sistem sesi için karşı taraftan ses çal.</span></div>
+            <div class="flow-preferences"><label><input type="checkbox" id="adaptiveSilence" checked onchange="setFlowPreference('adaptive_silence', this)"> Konuşmaya göre bekleme süresi</label><label><input type="checkbox" id="translationContext" checked onchange="setFlowPreference('translation_context', this)"> Önceki 3 cümleyi çeviride kullan</label></div>
+            <p id="flowPreferenceStatus" role="status"></p><p id="readinessStatus" role="status">Kontrol için aç.</p>
         </details>
         <div class="main-grid">
             <!-- Sol Panel - Kontroller -->
@@ -2365,7 +2368,9 @@
                     <div id="transcriptSearchResults" style="display:none; margin-top:6px; max-height:260px; overflow-y:auto;"></div>
                 </div>
 
-                <div class="transcription-list" id="transcriptionList">
+                <div class="live-flow-strip"><span id="liveAudioState" role="status">Ses ölçümü bekleniyor</span><button type="button" id="backToLive" hidden onclick="backToLiveTranscript()">Canlıya dön ↑</button></div>
+                <details class="pipeline-details"><summary id="pipelineSummary">İşlem aşamaları</summary><div id="pipelineStages" role="status">Henüz işlem yok.</div></details>
+                <div class="transcription-list" id="transcriptionList" onscroll="updateTranscriptFollow()">
                     <div class="empty-state">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -2502,6 +2507,10 @@
 
         function applyRuntimeSettings(snapshot) {
             if (!snapshot || typeof snapshot !== 'object') return;
+            for (const [key, id] of [['adaptive_silence','adaptiveSilence'], ['translation_context','translationContext']]) {
+                const control = document.getElementById(id);
+                if (control && typeof snapshot[key] === 'boolean') control.checked = snapshot[key];
+            }
             const silence = Number(snapshot.silence_duration);
             const vad = Number(snapshot.vad_level);
             if (Number.isFinite(silence)) settings.silence_duration = silence;
@@ -3531,10 +3540,13 @@
             });
 
             socket.on('settings_updated', applyRuntimeSettings);
+            socket.on('audio_diagnostic', data => showAudioDiagnostic(data));
+            socket.on('transcription_corrected', data => applyTranscriptCorrection(data));
 
             // Çeviri arka planda tamamlandığında (DeepL) ilgili öğeye iliştir
             socket.on('transcription_translation', (data) => {
                 if (!data || data.id == null || !data.translation) return;
+                if ((data.revision || 0) !== ((window._transcriptRevisions || {})[data.id] || 0)) return;
                 const item = document.querySelector(`[data-transcription-id="${data.id}"]`);
                 if (item) {
                     appendInlineTranslationToItem(item, data.translation, data.target_lang);
@@ -3543,6 +3555,7 @@
 
             socket.on('transcription_translation_status', (data) => {
                 if (!data || data.id == null) return;
+                if ((data.revision || 0) !== ((window._transcriptRevisions || {})[data.id] || 0)) return;
                 const item = Array.from(document.querySelectorAll('[data-transcription-id]'))
                     .find(node => node.dataset.transcriptionId === String(data.id));
                 if (item) updateTranscriptTranslationStatus(item, data.status);
@@ -3940,14 +3953,13 @@
             const latencyLabel = Number.isFinite(latency) ? ` · ${Math.round(latency)} ms` : '';
             const remainder = text.startsWith(stableText) ? text.slice(stableText.length) : '';
             const separator = stableText && draftText ? (remainder.match(/^\s+/)?.[0] || '') : '';
-            prev.innerHTML = `
-                <div class="transcription-header">
-                    <span class="transcription-time">dinleniyor…${latencyLabel}</span>
-                </div>
-                <div class="transcription-original">
-                    <span style="font-style:normal; opacity:1;">${escapeHtml(stableText)}</span>${separator}<span style="opacity:.58;">${escapeHtml(draftText)}</span>
-                </div>
-            `;
+            if (!prev.querySelector('.partial-stable')) {
+                prev.innerHTML = '<div class="transcription-header"><span class="transcription-time"></span></div><div class="transcription-original"><span class="partial-stable"></span><span class="partial-draft"></span></div>';
+            }
+            const setPart = (selector, value) => { const el = prev.querySelector(selector); if (el.textContent !== value) el.textContent = value; };
+            setPart('.transcription-time', `Canlı taslak · henüz kesinleşmedi${latencyLabel}`);
+            setPart('.partial-stable', stableText + separator);
+            setPart('.partial-draft', draftText);
             // Guvenlik agi: 6sn guncelleme gelmezse onizlemeyi kaldir (cok kisa/atilan utterance)
             if (_partialHideTimer) clearTimeout(_partialHideTimer);
             _partialHideTimer = setTimeout(clearPartialPreview, 6000);
@@ -4636,6 +4648,7 @@
             try {
                 const response = await fetch('/api/stats');
                 const stats = await response.json();
+                if (typeof renderPipelineStages === 'function') renderPipelineStages(stats.pipeline);
                 document.getElementById('totalCount').textContent = stats.total_transcriptions;
                 const formatLatency = (value) => {
                     if (value == null || value === '') return '—';
@@ -5698,6 +5711,7 @@
         }
 
         async function getAIResponse(id, text, mode, button) {
+            const transcriptRevision = (window._transcriptRevisions || {})[id] || 0;
             window._activeAnswerRequests = window._activeAnswerRequests || {};
             if (mode !== 'translate' && window._activeAnswerRequests[id]) {
                 // Kullanici bekleyen eski transkripti bilincli olarak yeniden
@@ -5767,8 +5781,8 @@
                 // Bu istek hala kutunun sahibi mi? Degilse (kullanici 🔄 Yeni'ye
                 // basti ya da otomatik oneri yenisini baslatti) bayat sonucu cizme;
                 // butonu da yeni istek yonetiyor.
-                const stillOwner = (mode === 'translate')
-                    || ((window._activeAnswerRequests || {})[id] === requestId);
+                const stillOwner = transcriptRevision === ((window._transcriptRevisions || {})[id] || 0)
+                    && ((mode === 'translate') || ((window._activeAnswerRequests || {})[id] === requestId));
 
                 if (data.success && stillOwner) {
                     if (mode !== 'translate') {
@@ -5803,8 +5817,8 @@
                     }
                 }
             } catch (error) {
-                const stillOwner = mode === 'translate'
-                    || (window._activeAnswerRequests || {})[id] === requestId;
+                const stillOwner = transcriptRevision === ((window._transcriptRevisions || {})[id] || 0)
+                    && (mode === 'translate' || (window._activeAnswerRequests || {})[id] === requestId);
                 if (stillOwner) {
                     showAlert(error.name === 'AbortError' ? 'AI isteği zaman aşımına uğradı; tekrar deneyebilirsiniz.' : '❌ Bağlantı hatası', 'error');
                     button.disabled = false;
@@ -6112,6 +6126,7 @@
         }
     </script>
     <script src="/static/cockpit.js"></script>
+    <script src="/static/live-flow.js"></script>
     <script src="/static/reading-mode.js"></script>
     <script src="/static/quick-phrases.js"></script>
 </body>

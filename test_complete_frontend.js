@@ -49,12 +49,14 @@ async function main() {
     assert.strictEqual(storageWindow.whisperStorage.getItem('x'), null);
     assert.strictEqual(notices, 1);
 
-    const preview = {innerHTML: ''};
+    const parts = {};
+    const preview = {innerHTML: '', querySelector: selector => parts[selector] || (parts[selector] = {textContent:''})};
     const pv = vm.createContext({document: {getElementById: id => id === 'transcriptionList' ? {querySelector: () => null} : preview}, escapeHtml: String, clearTimeout() {}, setTimeout() {}, clearPartialPreview() {}});
     vm.runInContext('let _partialHideTimer = null;\n' + part('        function showPartialPreview(', '        function clearPartialPreview('), pv);
     for (const [text, stable, draft, sep] of [['これは日本語', 'これは', '日本語', ''], ['hello world', 'hello', 'world', ' '], ['東京 test', '東京', 'test', ' '], ['testing', 'test', 'ing', '']]) {
         pv.showPartialPreview({text, stable_text: stable, draft_text: draft});
-        assert(preview.innerHTML.includes(`${stable}</span>${sep}<span`), text);
+        assert.strictEqual(parts['.partial-stable'].textContent, stable + sep, text);
+        assert.strictEqual(parts['.partial-draft'].textContent, draft, text);
     }
 
     const result = {style: {}, querySelector: () => ({classList: {contains: () => true}}), querySelectorAll: () => []};
