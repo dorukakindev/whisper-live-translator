@@ -2,9 +2,11 @@
 
 Yeni oturum ve format sonrası kurulum: [BASLANGIC.md](BASLANGIC.md)
 
-Güncel devir notu: [2026-09-14 14:30 — Oyun kutusu görsel iyileştirmesi](docs/devir/2026-09-14-1430.md)
+Güncel devir notu: [2026-09-14 14:50 — Oyun modu ve dengeli ses profili](docs/devir/2026-09-14-1450.md)
 
 ## Arşiv
+
+- [2026-09-14 14:50 — Oyun modu ve dengeli ses profili](docs/devir/2026-09-14-1450.md)
 
 - [2026-09-14 14:30 — Oyun kutusu görsel iyileştirmesi](docs/devir/2026-09-14-1430.md)
 

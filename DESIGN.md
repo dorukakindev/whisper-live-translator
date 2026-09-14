@@ -98,6 +98,8 @@ Görüşmeye hazırlık açıldığında model ve AI durumu sunucudan alınır; 
 
 ### Oyun çeviri kutusu
 
+Ana başlıkta **Oyun modu** bir aç/kapat düğmesidir; aria-pressed ve açık metni gerçek backend durumundan gelir. Açma önce kutuyu açar, sonra geçici ses profilini etkinleştirir; kapama profili kaldırıp kutuyu kapatır. İşlem sırasında ikinci tıklama engellenir, hata sonrası gerçek ayarlar yeniden okunur. Normal sessizlik/uyarlama değerleri değiştirilmez: sistem sesinde 0,9 sn temel uyarlanabilir bekleme ve 10 sn üst parça sınırı geçici uygulanır. Mikrofon/PTT ve model/VAD/çeviri sağlayıcısı değişmez. Ses yakalamayı kullanıcı Başlat ile yönetir. Pencereyi kısayoldan kapatmak profili kapatmaz; profil Oyun modu düğmesinden kapanır. Backend yeniden başladığında mod kapalı başlar.
+
 Görsel yön: küçük ses dalgası işareti, ince başlık, ortak vurgu renginden türeyen hafif yüzey ışığı ve 18 px köşe. Tam genişlikte kalın ayırıcılar kullanılmaz. Çeviri 550 ağırlığında; orijinal metin ince dikey çizgiyle ikincildir. Kilitli modda metin taşmıyorsa dikey ortalanır, uzun metinde kaydırma başlangıcı korunur. Durum ve kısayol alt şeritte sakin görünür. Görünüm kaydırıcıları ince iz ve yuvarlak tutamaç kullanır. Açık temada yardımcı metin alias'ları body kapsamındaki tema tokenlarından çözülür; kökteki koyu renk miras alınmaz.
 
 Ana pencerenin Oyun çevirisi düğmesi aynı backend'in `/overlay` penceresini açar. Varsayılan 520×240, en küçük 320×220; ekran dışındaki kayıtlı konum görünür alana taşınır. Pencere odağı çalmadan açılır. Büyük çeviri birincil, küçük orijinal metin ikincildir; kaynak sistem sesidir, mic/PTT olayları gösterilmez. Önceki tema tokenları korunur; zemin saydamlığı ve 18–36 px yazı tercihi yerel saklanır.
