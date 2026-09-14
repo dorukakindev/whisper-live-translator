@@ -85,6 +85,16 @@ git diff --check
 
 ## Mevcut doğrulama sınırları
 
-Son kod çalışmasında yeni çeviri işçisi testleri geçti; tam smoke Torch DLL hatası yüzünden başarısızdı. Gerçek HTTP, uzun canlı görüşme, ücretli sağlayıcı, GPU/diarization ve portatif paket doğrulaması bekliyor. Ayrıntıları [devir arşivinden](DEVIR-NOTU.md) oku. Bu durum gelecekte değişirse yeni tarihli notla kaydet.
+Son kod çalışmasında yeni regresyonlar ve gerçek Chromium arayüz kontrolleri geçti. Ayrı backend'de `/` ve tokenlı `/api/settings` 200 doğrulandı. Portable paket üretildi, hassas dosya taraması ve değişen dosyaların kaynak/paket eşleşmesi doğrulandı. Tam smoke 33/34 geçti; kalan konuşmacı testi Torch c10.dll WinError 1114 nedeniyle çalışmadı. Uzun gerçek görüşme, ücretli sağlayıcı, GPU/diarization ve yeni bilgisayarda portable'ın uçtan uca çalışması doğrulanmadı. Ayrıntıları [devir arşivinden](DEVIR-NOTU.md) oku.
+
+Son paketleme sistem Node 26 ile tamamlanmadığından mevcut makinedeki bundled Node 24.19.0 kullanıldı. Yeni bilgisayarda eski bundled mutlak yolu geçerli sayma; çalışan Node kurulumunu doğrula. Python ortamı son çalışmada 3.11 idi; temiz kurulum örneğindeki 3.12 bir zorunluluk değildir. Yeni makinede uyumlu bağımlılıkları kur ve test et.
+
+## Yeni bilgisayarda devam mesajı
+
+Depoyu klonlayıp Codex'te proje klasörünü açtıktan sonra şu talimat yeterlidir:
+
+> AGENTS.md, BASLANGIC.md ve DEVIR-NOTU.md içindeki güncel notu oku. Gerçek makineyi ve Git durumunu kontrol et, proje bağımlılıklarını ayrı ortamda kur, testleri çalıştır ve Whisper Pro geliştirmesine devam et. Proxifier'ı yeniden açma. Eski makinenin Torch DLL sorununu yeni makinede varsayma; yeniden doğrula.
+
+GitHub'da kaynak kod, testler, paketleme dosyaları, gereksinimler, tasarım ve tarihli devir notları vardır. `.env`, transkriptler, konuşmacı profilleri, tarayıcı/Electron localStorage içindeki favoriler/terim sözlüğü/ayarlar, modeller, sanal ortam ve portable exe GitHub'dan geri gelmez. Yerel verileri korumak gerekiyorsa format öncesi güvenli özel yedek al; anahtarları GitHub'a koyma. Bu rehber özel yedeğin alındığı veya yeni makinede kurulumun denendiği anlamına gelmez.
 
 `dist` kaynakla kendiliğinden güncellenmez. Portatif exe istenirse testlerden sonra `npm run build` çalıştır, üretilen paketi ayrıca dene; yalnız kaynak push ederek exe güncellendiğini söyleme.
