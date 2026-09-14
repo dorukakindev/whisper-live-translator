@@ -2,9 +2,11 @@
 
 Yeni oturum ve format sonrası kurulum: [BASLANGIC.md](BASLANGIC.md)
 
-Güncel devir notu: [2026-09-14 11:38 — Konuşma odaklı tasarım yenilemesi](docs/devir/2026-09-14-1138.md)
+Güncel devir notu: [2026-09-14 11:57 — Görüşme masası tasarımı](docs/devir/2026-09-14-1157.md)
 
 ## Arşiv
+
+- [2026-09-14 11:57 — Görüşme masası tasarımı](docs/devir/2026-09-14-1157.md)
 
 - [2026-09-14 11:38 — Konuşma odaklı tasarım yenilemesi](docs/devir/2026-09-14-1138.md)
 
