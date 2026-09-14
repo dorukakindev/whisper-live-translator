@@ -1,0 +1,14 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["templates", "static"],
+  "locale": "tr-TR",
+  "canonicalMap": "DESIGN.md",
+  "requiredCapabilities": ["Select/Listbox", "Date", "Form", "Scrollbar", "Toast"],
+  "ownership": {"Select/Listbox": "native", "Date": "native"},
+  "requiredCommands": ["interaction", "ownership", "requests"],
+  "commands": {
+    "interaction": "node_modules/.bin/electron.cmd test_cockpit_browser.js",
+    "ownership": "node test_cockpit_behavior.js",
+    "requests": "node test_cockpit_request.js"
+  }
+}

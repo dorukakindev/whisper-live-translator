@@ -1556,9 +1556,9 @@
                     </svg>
                 </div>
                 <div class="brand-copy">
-                    <span class="brand-eyebrow">Canlı dil konsolu</span>
+                    <span class="brand-eyebrow">Canlı görüşme asistanı</span>
                     <h1>Whisper Pro</h1>
-                    <p class="brand-subtitle">Dinle, anla ve doğal bir cevapla karşılık ver</p>
+                    <p class="brand-subtitle">Canlı çeviri ve konuşma asistanı</p>
                 </div>
             </div>
             <div class="header-actions">
@@ -1599,6 +1599,40 @@
                 onclick="dismissAiKeyWarning()">Kapat</button>
         </div>
 
+        <section class="session-toolbar" aria-label="Görüşme kontrolleri">
+            <div class="session-language-pair"><div class="session-own-language"><span>Senin dilin</span><strong>Türkçe</strong></div><span class="session-language-arrow" aria-hidden="true">⇄</span><div class="session-target-language"><label for="otherPartyLang">Karşı taraf</label>                    <select id="otherPartyLang" onchange="setOtherPartyLanguage(this.value)" style="width: 100%;">
+                        <option value="">— seç —</option>
+                        <option value="auto">🌐 Otomatik Algıla</option>
+                        <option value="ja">🇯🇵 Japonca</option>
+                        <option value="en">🇬🇧 İngilizce</option>
+                        <option value="de">🇩🇪 Almanca</option>
+                        <option value="zh">🇨🇳 Çince</option>
+                        <option value="ar">🇸🇦 Arapça</option>
+                        <option value="fr">🇫🇷 Fransızca</option>
+                        <option value="es">🇪🇸 İspanyolca</option>
+                        <option value="ru">🇷🇺 Rusça</option>
+                        <option value="ko">🇰🇷 Korece</option>
+                        <option value="pt">🇵🇹 Portekizce</option>
+                        <option value="da">🇩🇰 Danca</option>
+                        <option value="sv">🇸🇪 İsveççe</option>
+                        <option value="fi">🇫🇮 Fince</option>
+                        <option value="el">🇬🇷 Yunanca</option>
+                        <option value="ka">🇬🇪 Gürcüce</option>
+                        <option value="sk">🇸🇰 Slovakça</option>
+                        <option value="az">🇦🇿 Azerice</option>
+                    </select></div></div>
+            <div class="session-recording">                <!-- Kontrol Butonları -->
+                <div class="control-buttons">
+                    <button class="btn btn-primary" id="startBtn" onclick="startCapture()" disabled>
+                        <span class="header-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z" /></svg></span>
+                        Başlat
+                    </button>
+                    <button class="btn btn-danger" id="stopBtn" onclick="stopCapture()" disabled>
+                        <span class="header-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" /></svg></span>
+                        Durdur
+                    </button>
+                </div></div>
+        </section>
         <section class="cockpit-status" aria-label="Canlı konuşma durumu">
             <div class="cockpit-status-item">
                 <span class="cockpit-status-label">AKIŞ</span>
@@ -1619,7 +1653,7 @@
             <div class="cockpit-status-item latency-status-item">
                 <span class="cockpit-status-label">GECİKME</span>
                 <button type="button" class="cockpit-status-value cockpit-latency-trigger"
-                    id="cockpitLatencyState" aria-expanded="false"
+                    id="cockpitLatencyState" onclick="toggleLatencyDetails()" aria-expanded="false"
                     aria-controls="cockpitLatencyDetails">Ölçülüyor</button>
                 <div class="latency-details" id="cockpitLatencyDetails" hidden>
                     Henüz gecikme ölçümü yok.
@@ -1653,27 +1687,7 @@
                             <span class="tooltiptext">Tek seçimle hem giriş dilini (Whisper) hem cevap önerisi dilini ayarlar. Senin dilin her zaman Türkçe kabul edilir. İnce ayar istersen aşağıdaki bölümleri tek tek de değiştirebilirsin.</span>
                         </span>
                     </h3>
-                    <select id="otherPartyLang" onchange="setOtherPartyLanguage(this.value)" style="width: 100%;">
-                        <option value="">— seç —</option>
-                        <option value="auto">🌐 Otomatik Algıla</option>
-                        <option value="ja">🇯🇵 Japonca</option>
-                        <option value="en">🇬🇧 İngilizce</option>
-                        <option value="de">🇩🇪 Almanca</option>
-                        <option value="zh">🇨🇳 Çince</option>
-                        <option value="ar">🇸🇦 Arapça</option>
-                        <option value="fr">🇫🇷 Fransızca</option>
-                        <option value="es">🇪🇸 İspanyolca</option>
-                        <option value="ru">🇷🇺 Rusça</option>
-                        <option value="ko">🇰🇷 Korece</option>
-                        <option value="pt">🇵🇹 Portekizce</option>
-                        <option value="da">🇩🇰 Danca</option>
-                        <option value="sv">🇸🇪 İsveççe</option>
-                        <option value="fi">🇫🇮 Fince</option>
-                        <option value="el">🇬🇷 Yunanca</option>
-                        <option value="ka">🇬🇪 Gürcüce</option>
-                        <option value="sk">🇸🇰 Slovakça</option>
-                        <option value="az">🇦🇿 Azerice</option>
-                    </select>
+<p class="session-settings-note">Karşı tarafın dilini üstteki görüşme şeridinden seçebilirsiniz.</p>
                     <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
                         Bunu ayarlayınca <b>Giriş Dili</b> ve <b>Cevap Önerisi Dili</b> otomatik güncellenir. Türkçe senin dilin olarak sabittir.
                     </div>
@@ -2067,7 +2081,7 @@
                     <div class="ai-settings-content">
                         <textarea id="glossaryEditor" rows="6"
                             placeholder="OpenAI | OpenAI | open ey ay | en&#10;渋谷 | Şibuya | şibuya | ja"
-                            style="width:100%; resize:vertical; box-sizing:border-box; font-size:12px; line-height:1.5;"></textarea>
+                            style="width:100%; resize:none; min-height:150px; box-sizing:border-box; font-size:12px; line-height:1.5;"></textarea>
                         <div style="font-size:11px; color:var(--text-muted); margin:5px 0 8px;">
                             Her satır: kaynak | tercih edilen çeviri | Türkçe okunuş | hedef dil. Yalnız kaynak alanı zorunlu; en fazla 100 satır.
                         </div>
@@ -2177,17 +2191,7 @@
                     </select>
                 </div>
 
-                <!-- Kontrol Butonları -->
-                <div class="control-buttons">
-                    <button class="btn btn-primary" id="startBtn" onclick="startCapture()" disabled>
-                        <span class="header-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z" /></svg></span>
-                        Başlat
-                    </button>
-                    <button class="btn btn-danger" id="stopBtn" onclick="stopCapture()" disabled>
-                        <span class="header-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" /></svg></span>
-                        Durdur
-                    </button>
-                </div>
+
 
                 <!-- Ayarlar -->
                 <div class="settings-panel">
@@ -2338,7 +2342,7 @@
             <!-- Sağ Panel - Transcriptions -->
             <div class="card transcription-area">
                 <div class="transcription-controls">
-                    <div><span class="section-kicker">01 / DİNLE VE ANLA</span><h2>Canlı konuşma</h2></div>
+                    <div><span class="section-kicker">KARŞI TARAF</span><h2>Konuşma akışı</h2></div>
                     <div style="display: flex; gap: 8px;">
                         <button class="btn btn-secondary" onclick="quickReset()" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.25);" title="Sistem hafızasını ve takılan transkripsiyon döngülerini temizler.">
                             Sıfırla
@@ -2356,16 +2360,16 @@
                 </div>
 
                 <div style="margin-bottom: 8px; position: relative;">
-                    <input type="text" id="transcriptSearchInput" aria-label="Konuşmalarda ara" placeholder="Konuşmalarda ara…"
-                        oninput="filterVisibleTranscriptions(this.value)"
-                        onkeydown="if (event.key === 'Enter') searchFullTranscriptHistory(this.value)"
-                        style="width: 100%; padding: 8px 10px; font-size: 13px; box-sizing: border-box;">
+                    <div class="transcript-search-field"><input type="text" id="transcriptSearchInput" aria-label="Konuşmalarda ara" placeholder="Konuşmalarda ara…"
+                        oninput="filterVisibleTranscriptions(this.value); document.getElementById('transcriptSearchClear').hidden = !this.value"
+                        onkeydown="if (event.key === 'Enter' && !event.isComposing) searchFullTranscriptHistory(this.value)"
+                        style="width: 100%; padding: 8px 10px; font-size: 13px; box-sizing: border-box;"><button type="button" id="transcriptSearchClear" aria-label="Konuşma aramasını temizle" onclick="clearTranscriptSearch()" hidden>×</button></div>
                     <details class="history-disclosure"><summary>Geçmişte ayrıntılı ara</summary><div class="transcript-history-filters">
                         <label class="sr-only" for="transcriptDateFilter">Tarih filtresi</label>
                         <input type="date" id="transcriptDateFilter" aria-label="Tarih filtresi">
                         <label class="sr-only" for="transcriptSpeakerFilter">Konuşmacı filtresi</label>
                         <input type="text" id="transcriptSpeakerFilter" placeholder="Konuşmacı" aria-label="Konuşmacı filtresi"
-                            onkeydown="if (event.key === 'Enter') searchFullTranscriptHistory(document.getElementById('transcriptSearchInput').value)">
+                            onkeydown="if (event.key === 'Enter' && !event.isComposing) searchFullTranscriptHistory(document.getElementById('transcriptSearchInput').value)">
                         <button type="button" class="btn btn-secondary"
                             onclick="searchFullTranscriptHistory(document.getElementById('transcriptSearchInput').value)">Tüm geçmişte ara</button>
                     </div></details>
@@ -2378,17 +2382,17 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                         </svg>
-                        <p class="empty-state-title">Konuşmaya hazır olun</p>
-                        <p class="empty-state-description">Ses kaynağını hazırlayın. Konuşmalar ve çevirileri burada belirsin.</p>
+                        <p class="empty-state-title">İlk konuşmayı bekliyoruz</p>
+                        <p class="empty-state-description">Modeli ve ses kaynağını hazırlayıp üstten Başlat’a basın.</p>
                         <div class="setup-checklist" aria-label="Kurulum kontrol listesi">
                             <button type="button" class="setup-step" id="setupModel"
-                                data-ready="false" data-setup-target="model">Model seç ve yükle</button>
+                                data-ready="false" data-setup-target="model" onclick="focusSetupTarget('model')">Model seç ve yükle</button>
                             <button type="button" class="setup-step" id="setupDevice"
-                                data-ready="false" data-setup-target="device">Ses cihazı seç</button>
+                                data-ready="false" data-setup-target="device" onclick="focusSetupTarget('device')">Ses cihazı seç</button>
                             <button type="button" class="setup-step" id="setupAi"
-                                data-ready="false" data-setup-target="ai">OpenAI anahtarını doğrula</button>
+                                data-ready="false" data-setup-target="ai" onclick="focusSetupTarget('ai')">OpenAI anahtarını doğrula</button>
                             <button type="button" class="setup-step" id="setupStart"
-                                data-ready="false" data-setup-target="start">Başlat düğmesine bas</button>
+                                data-ready="false" data-setup-target="start" onclick="focusSetupTarget('start')">Başlat düğmesine bas</button>
                         </div>
                     </div>
                 </div>
@@ -2396,7 +2400,7 @@
                 <!-- AI Chat Asistan -->
                 <div class="ai-chat-container">
                     <div class="ai-chat-header">
-                        <h3>AI Konuşma Asistanı</h3>
+                        <h3>Konuşma hakkında sor</h3>
                         <button class="summary-btn" onclick="getSummary()" id="summaryBtn">
                             Özet Al
                         </button>
@@ -2405,7 +2409,7 @@
                     <div class="ai-question-bar">
                         <input type="text" class="ai-question-input" id="aiQuestionInput"
                             aria-label="Konuşma hakkında soru" placeholder="Konuşma hakkında bir soru sorun…"
-                            onkeypress="if(event.key === 'Enter') askQuestion()">
+                            onkeypress="if(event.key === 'Enter' && !event.isComposing) askQuestion()">
                         <button class="ai-ask-btn" id="aiAskBtn" onclick="askQuestion()">
                             Sor
                         </button>
@@ -2421,13 +2425,13 @@
             <aside class="card reply-cockpit" id="replyCockpit" aria-labelledby="replyCockpitTitle">
                 <header class="reply-cockpit-header">
                     <div>
-                        <span class="section-kicker">02 / CEVABINI SESLENDİR</span><h2 id="replyCockpitTitle">Cevap ve okunuş</h2>
-                        <p id="replyCockpitSource">Bir transkriptte “Cevap Öner” seçildiğinde seçenekler burada görünür.</p>
+                        <span class="section-kicker">SENİN CEVABIN</span><h2 id="replyCockpitTitle">Ne söylemek istersin?</h2>
+                        <p id="replyCockpitSource">Konuşmadan bir cümle seç. Cevabını Türkçe okunuşuyla seslendir.</p>
                     </div>
                     <span class="reply-cockpit-progress" id="replyCockpitProgress" aria-live="polite"></span>
                 </header>
                 <div class="reply-cockpit-options" id="replyCockpitOptions">
-                    <div class="reply-cockpit-empty">Henüz seçili bir konuşma yok.</div>
+                    <div class="reply-cockpit-empty"><span class="reply-empty-symbol" aria-hidden="true">Aa</span><strong>Cevabın burada hazırlanacak</strong><span>Gelen konuşmada Cevap öner düğmesine bas.<br>Yabancı dil bilmeden, okunuşu takip ederek yanıt ver.</span></div>
                 </div>
                 <footer class="reply-cockpit-footer">1–4 ile okuma modunu aç · Esc ile kapat</footer>
             </aside>
@@ -2523,11 +2527,8 @@
                 console.error('Runtime ayarlari okunamadi:', error);
             }
         }
-        document.getElementById('transcriptionList')?.addEventListener('click', event => {
-            const step = event.target.closest?.('[data-setup-target]');
-            if (!step) return;
+        function focusSetupTarget(targetName) {
             if (document.body.classList.contains('controls-collapsed')) toggleControlPanel();
-            const targetName = step.dataset.setupTarget;
             const target = targetName === 'model' ? document.getElementById('modelLoadBtn')
                 : targetName === 'device' ? document.getElementById('deviceSelect')
                 : targetName === 'ai' ? document.getElementById('openaiApiKeyAI')
@@ -2535,7 +2536,7 @@
             target?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
             if (targetName === 'start' && target && !target.disabled) target.click();
             else target?.focus?.();
-        });
+        }
         // Socket.IO bağlantısı
         let socket = null;
         try {
@@ -4260,7 +4261,7 @@
                     📝 Çevir
                 </button>
                 <button class="copy-btn ai-answer-btn" onclick="getAIResponseById(${data.id}, 'answer', this)" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 11px;">
-                    💬 Soru-Cevap
+                    Cevap öner
                 </button>
             </div>
             <div id="ai-result-${data.id}" style="display: none;"></div>
@@ -4921,6 +4922,7 @@
 
             // Hazır Kalıplar panelini yeni cevap diline göre güncelle (degisim + ilk yukleme)
             if (typeof renderQuickPhrases === 'function') renderQuickPhrases();
+            if (typeof updateCockpitStatus === 'function') updateCockpitStatus();
         }
 
         // ⚡ Hızlı Kurulum: 'Karşı tarafın dili' tek seçici. NON-DESTRUCTIVE —

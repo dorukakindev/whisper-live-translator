@@ -62,7 +62,7 @@ function toggleLatencyDetails() {
     trigger.setAttribute('aria-expanded', String(opening));
 }
 
-document.getElementById('cockpitLatencyState')?.addEventListener?.('click', toggleLatencyDetails);
+
 
 function toggleControlPanel() {
     const collapsed = document.body.classList.toggle('controls-collapsed');
@@ -85,6 +85,7 @@ function selectReplyTarget(id, text, reset = false) {
     const nextId = String(id);
     if (reset || _replyTargetId !== nextId) {
         _replyGeneration++;
+        document.getElementById('replyCockpitOptions').dataset.selectedKey = '';
         document.getElementById('replyCockpitOptions').innerHTML = '<div class="reply-cockpit-empty">Cevaplar hazırlanıyor.</div>';
     }
     _replyTargetId = nextId;
@@ -111,6 +112,7 @@ function renderReplyCockpit(id, options, effectiveLang, langLabel, partial) {
     if (!host) return;
     const previousKey = document.activeElement?.closest?.('.reply-option-card')?.dataset.answerKey || '';
     const previousAction = document.activeElement?.dataset?.replyAction || 'read';
+    const previousChoice = document.activeElement?.classList?.contains('reply-choice');
     const previousScroll = host.scrollTop;
     const unique = mergeUniqueAnswerOptions([], options || []).slice(0, 4);
     if (!unique.length) {
@@ -118,18 +120,24 @@ function renderReplyCockpit(id, options, effectiveLang, langLabel, partial) {
         setCockpitValue('replyCockpitProgress', partial ? 'Bekleniyor' : 'Sonuç yok');
         return;
     }
-    host.innerHTML = unique.map((opt, idx) => {
+    const selectedKey = host.dataset.selectedKey || previousKey || '';
+    const selectedIndex = Math.max(0, unique.findIndex(option => answerStableKey(option) === selectedKey));
+    host.dataset.selectedKey = answerStableKey(unique[selectedIndex]);
+    const choices = '<div class="reply-choice-list" role="group" aria-label="Cevap seçenekleri">' + unique.map((option, index) =>
+        `<button type="button" class="reply-choice" data-choice-index="${index}" aria-pressed="${index === selectedIndex}" aria-controls="reply-option-${index}" onclick="selectCockpitOption(${index})"><span class="reply-choice-number">${index + 1}</span><span>${escapeHtml(option.turkish || option.translation || 'Cevap ' + (index + 1))}</span></button>`
+    ).join('') + '</div>';
+    host.innerHTML = choices + unique.map((opt, idx) => {
         const nativeText = String(opt.translation || opt.turkish || '');
         const meaning = opt.turkish && opt.turkish.trim() !== nativeText.trim() ? opt.turkish : '';
         const pronunciation = String(opt.romanized || nativeText);
         const lang = String(opt.language || effectiveLang || '');
         const key = answerStableKey(opt);
-        return `<article class="reply-option-card" data-answer-key="${escapeHtml(key)}">
+        return `<article class="reply-option-card" id="reply-option-${idx}" data-answer-key="${escapeHtml(key)}" ${idx === selectedIndex ? '' : 'hidden'}>
             <div class="reply-option-topline"><span class="reply-option-number">Seçenek ${idx + 1}</span><span class="reply-option-language">${escapeHtml(langLabel || lang)}</span></div>
-            <div class="reply-option-pronunciation">${escapeHtml(pronunciation)}</div>
-            <div class="reply-option-native">${escapeHtml(nativeText)}</div>
-            ${meaning ? `<div class="reply-option-meaning">${escapeHtml(meaning)}</div>` : ''}
-            <div class="reply-option-actions">
+            <div class="reply-reading-label">Böyle söyle <span>Türkçe okunuş</span></div><div class="reply-option-pronunciation">${escapeHtml(pronunciation)}</div>
+            <div class="reply-detail-grid"><div class="reply-option-native"><span class="reply-detail-label">Orijinal cümle</span><span dir="auto">${escapeHtml(nativeText)}</span></div>
+            ${meaning ? `<div class="reply-option-meaning"><span class="reply-detail-label">Türkçe anlamı</span>${escapeHtml(meaning)}</div>` : ''}
+            </div><div class="reply-option-actions">
                 <button type="button" class="reply-read-button" data-reply-action="read" onclick="openReadingMode('${escapeJsString(pronunciation)}','${escapeJsString(nativeText)}','${escapeJsString(meaning)}','${escapeJsString(lang)}')">Okuma modu</button>
                 <button type="button" data-reply-action="copy" onclick="copyResponseText('${escapeJsString(pronunciation)}')">Okunuşu kopyala</button>
                 <button type="button" data-reply-action="listen" onclick="speakText('${escapeJsString(nativeText)}','${escapeJsString(lang)}')">Dinle</button>
@@ -139,7 +147,27 @@ function renderReplyCockpit(id, options, effectiveLang, langLabel, partial) {
     }).join('');
     setCockpitValue('replyCockpitProgress', partial ? 'Diğer seçenekler hazırlanıyor' : `${unique.length} seçenek hazır`);
     host.scrollTop = previousScroll;
+    if (previousChoice) host.querySelector('.reply-choice[aria-pressed="true"]')?.focus({preventScroll:true});
     if (previousKey) host.querySelector(`[data-answer-key="${CSS.escape(previousKey)}"] [data-reply-action="${CSS.escape(previousAction)}"]`)?.focus({preventScroll:true});
+}
+
+// Seçim yalnız görünümü değiştirir; yeni AI isteği oluşturmaz.
+function selectCockpitOption(index) {
+    const host = document.getElementById('replyCockpitOptions');
+    const cards = Array.from(host.querySelectorAll('.reply-option-card'));
+    if (!Number.isInteger(index) || !cards[index]) return;
+    cards.forEach((card, i) => { card.hidden = i !== index; });
+    host.querySelectorAll('.reply-choice').forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)));
+    host.dataset.selectedKey = cards[index].dataset.answerKey;
+}
+
+function clearTranscriptSearch() {
+    const input = document.getElementById('transcriptSearchInput');
+    input.value = '';
+    _searchGeneration++;
+    filterVisibleTranscriptions('');
+    document.getElementById('transcriptSearchClear').hidden = true;
+    input.focus();
 }
 
 // 1-4 tuslari yalniz gorunur cevap kokpitindeki okuma dugmelerini acar.

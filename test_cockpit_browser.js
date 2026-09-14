@@ -32,7 +32,7 @@ function fixtureHtml() {
         const setupStepCount = document.querySelectorAll('.setup-step').length;
         document.getElementById('setupModel').click();
         const setupTargetFocused = document.activeElement?.id === 'modelLoadBtn';
-        addTranscription({id:1,text:'Bugün toplantıdan sonra istasyonda buluşabilir miyiz?',timestamp:'14:32',model_language:'TR',source_lang:'tr',confidence:.96});
+        addTranscription({id:1,text:'会議のあと、駅で会えますか？',translation:'Toplantıdan sonra istasyonda buluşabilir miyiz?',target_lang:'TR',timestamp:'14:32',model_language:'JA',source_lang:'ja',confidence:.96});
         selectReplyTarget(1, transcriptionTexts[1], true);
         renderAiResult(1,'answer',{success:true,detected_lang:'ja',options:[
           {translation:'はい、会議のあと駅で会いましょう。',turkish:'Evet, toplantıdan sonra istasyonda buluşalım.',romanized:'Hay, kaigi-no ato eki-de aymaşo.',language:'ja'},
@@ -40,6 +40,9 @@ function fixtureHtml() {
           {translation:'少し遅れるかもしれません。',turkish:'Biraz gecikebilirim.',romanized:'Sukoşi okureru kamo şiremasen.',language:'ja'},
           {translation:'駅の北口で待っています。',turkish:'İstasyonun kuzey çıkışında bekliyorum.',romanized:'Eki-no kita-guçi-de matteymas.',language:'ja'}
         ]},'auto','Japonca',false);
+        document.getElementById('otherPartyLang').value = 'ja';
+        document.getElementById('aiTargetLang').value = 'ja';
+        updateCockpitStatus();
         updateStats();
         const firstReading = document.querySelector('.reply-read-button');
         document.getElementById('cockpitLatencyState').click();
@@ -104,6 +107,25 @@ app.whenReady().then(async () => {
         return {remembered,finite,focusRestored,blocked:!generated};
     })()`);
     assert.deepStrictEqual(readingChecks, {remembered:true,finite:true,focusRestored:true,blocked:true});
+    const selectionChecks = await win.webContents.executeJavaScript(`(() => {
+        const host = document.getElementById('replyCockpitOptions');
+        const buttons = [...host.querySelectorAll('.reply-choice')];
+        buttons[2].focus(); buttons[2].click();
+        const selectedText = host.querySelector('.reply-option-card:not([hidden]) .reply-option-pronunciation').textContent;
+        const onlyOne = host.querySelectorAll('.reply-option-card:not([hidden])').length === 1;
+        const pressed = buttons[2].getAttribute('aria-pressed') === 'true';
+        const selectedKey = host.dataset.selectedKey;
+        const data = [{translation:'少し遅れるかもしれません。',turkish:'Biraz gecikebilirim.',romanized:'Sukoşi okureru kamo şiremasen.',language:'ja'},
+          {translation:'はい、会議のあと駅で会いましょう。',turkish:'Evet, toplantıdan sonra istasyonda buluşalım.',romanized:'Hay, kaigi-no ato eki-de aymaşo.',language:'ja'}];
+        renderReplyCockpit(1, data, 'ja', 'Japonca', false);
+        const preserved = host.dataset.selectedKey === selectedKey && host.querySelector('.reply-option-card:not([hidden]) .reply-option-pronunciation').textContent === selectedText;
+        const choiceFocus = document.activeElement.classList.contains('reply-choice') && document.activeElement.getAttribute('aria-pressed') === 'true';
+        return {onlyOne,pressed,preserved,choiceFocus};
+    })()`);
+    assert.deepStrictEqual(selectionChecks, {onlyOne:true,pressed:true,preserved:true,choiceFocus:true});
+    // Sonraki ekran kontrolleri dört seçenekli ilk durumu kullanır.
+    await win.loadFile(fixturePath);
+    await new Promise(resolve => setTimeout(resolve, 150));
     const designChecks = await win.webContents.executeJavaScript(`(() => {
         document.body.classList.add('controls-collapsed');
         const main = document.querySelector('.transcription-area').getBoundingClientRect();
@@ -128,6 +150,23 @@ app.whenReady().then(async () => {
         return {stableWidth,returned,headerFits,expanded,filtersVisible,closeVisible};
     })()`);
     assert.deepStrictEqual(designChecks, {stableWidth:true,returned:true,headerFits:true,expanded:true,filtersVisible:true,closeVisible:true});
+    const searchClear = await win.webContents.executeJavaScript(`(async () => {
+        const input = document.getElementById('transcriptSearchInput');
+        const originalFetch = window.fetch;
+        let finish;
+        window.fetch = () => new Promise(resolve => { finish = resolve; });
+        input.value = 'önceki sorgu';
+        input.dispatchEvent(new Event('input', {bubbles:true}));
+        const clearVisible = !document.getElementById('transcriptSearchClear').hidden;
+        const pending = searchFullTranscriptHistory(input.value);
+        document.getElementById('transcriptSearchClear').click();
+        finish({ok:true,json:async()=>({transcriptions:[{id:1,text:'Eski sonuç'}]})});
+        await pending;
+        window.fetch = originalFetch;
+        return {clearVisible,empty:input.value === '',focused:document.activeElement === input,
+            staleHidden:document.getElementById('transcriptSearchResults').style.display === 'none'};
+    })()`);
+    assert.deepStrictEqual(searchClear, {clearVisible:true,empty:true,focused:true,staleHidden:true});
     await win.webContents.executeJavaScript(`toggleLatencyDetails(); window.scrollTo(0, 0); document.querySelector('.control-panel').scrollTop = 0;`);
 
     for (const [width, height] of sizes) {
@@ -138,7 +177,7 @@ app.whenReady().then(async () => {
             overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
             transcript: !!document.querySelector('.transcription-area'),
             cockpit: !!document.querySelector('.reply-cockpit'),
-            buttons: [...document.querySelectorAll('#replyCockpitOptions button')].every(b=>b.getBoundingClientRect().width>0)
+            buttons: [...document.querySelectorAll('#replyCockpitOptions .reply-option-card:not([hidden]) button, #replyCockpitOptions .reply-choice')].every(b=>b.getBoundingClientRect().width>0)
         })`);
         assert.strictEqual(geometry.overflow, false, width + 'px yatay tasma');
         assert(geometry.transcript && geometry.cockpit && geometry.buttons);
@@ -261,6 +300,26 @@ app.whenReady().then(async () => {
     await win.webContents.executeJavaScript(`document.querySelector('.control-panel').scrollTop = 0`);
     await new Promise(resolve => setTimeout(resolve, 250));
     fs.writeFileSync(path.join(outputDir, '1440x900-settings.png'), (await win.webContents.capturePage()).toPNG());
+    // Dar ekranda cevap alanını da görünür konumda kaydet.
+    await win.loadFile(fixturePath);
+    win.setSize(600, 800);
+    await win.webContents.executeJavaScript(`document.body.classList.add('controls-collapsed'); document.getElementById('replyCockpit').scrollIntoView();`);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    fs.writeFileSync(path.join(outputDir, '600x800-reply.png'), (await win.webContents.capturePage()).toPNG());
+    // Yardımcı pencere aynı renk tokenlarını kullanır; kapanış platform işidir.
+    let overlay = fs.readFileSync(path.join(__dirname, 'templates', 'overlay.html'), 'utf8');
+    overlay = overlay.replace('<script src="/static/socket.io.min.js"></script>', '<script>function io(){return {on(){}};}</script>');
+    for (const name of ['runtime-safety.js', 'html-utils.js']) overlay = overlay.replace(`<script src="/static/${name}"></script>`, `<script>${fs.readFileSync(path.join(__dirname,'static',name),'utf8')}</script>`);
+    overlay = overlay.replace('<link rel="stylesheet" href="/static/whisper-pro-theme.css">', `<style>${fs.readFileSync(path.join(__dirname,'static','whisper-pro-theme.css'),'utf8')}</style>`).replace('{{ app_token|tojson }}','"fixture-token"');
+    const overlayPath = path.join(outputDir, 'overlay.html');
+    fs.writeFileSync(overlayPath, overlay);
+    await win.loadFile(overlayPath);
+    win.setSize(480, 520);
+    await win.webContents.executeJavaScript(`document.body.classList.remove('light-mode'); renderTranscript({id:1,text:'会議のあと、駅で会えますか？',translation:'Toplantıdan sonra istasyonda buluşabilir miyiz?'});`);
+    const overlayColor = await win.webContents.executeJavaScript(`getComputedStyle(document.documentElement).getPropertyValue('--primary').trim()`);
+    assert.strictEqual(overlayColor, '#7296ff');
+    await new Promise(resolve => setTimeout(resolve, 250));
+    fs.writeFileSync(path.join(outputDir, '480x520-overlay.png'), (await win.webContents.capturePage()).toPNG());
     win.close();
     console.log('Gercek Chromium Cockpit davranis ve gorsel testleri gecti:', outputDir);
     app.quit();

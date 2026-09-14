@@ -12,19 +12,19 @@
     <style>
         :root {
             color-scheme: dark;
-            --bg-main: rgba(9, 11, 14, 0.95);
-            --bg-card: rgba(21, 27, 34, 0.96);
-            --bg-raised: #1c242c;
-            --text-main: #edf1f3;
-            --text-secondary: #a1adb7;
-            --text-muted: #687681;
-            --primary: #d5a35c;
-            --primary-hover: #efbd73;
-            --translation: #8fc5c2;
-            --success: #69b58b;
-            --warning: #d2a064;
-            --border-color: #27313b;
-            --border-strong: #3a4652;
+            --bg-main: var(--wp-canvas);
+            --bg-card: var(--wp-surface);
+            --bg-raised: var(--wp-raised);
+            --text-main: var(--wp-text);
+            --text-secondary: var(--wp-text-secondary);
+            --text-muted: var(--wp-text-muted);
+            --primary: var(--wp-accent);
+            --primary-hover: var(--wp-accent-hover);
+            --translation: var(--wp-translation);
+            --success: var(--wp-success);
+            --warning: var(--wp-warning);
+            --border-color: var(--wp-border);
+            --border-strong: var(--wp-border-strong);
         }
 
         body.light-mode {
@@ -254,7 +254,7 @@
 <body>
     <div id="dragHeader">
         <span><span class="status-dot" id="statusDot"></span>Whisper Pro / Live</span>
-        <button id="closeBtn" title="Kapat" aria-label="Overlay penceresini kapat">
+        <button id="closeBtn" onclick="window.close()" title="Kapat" aria-label="Overlay penceresini kapat">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg>
         </button>
     </div>
@@ -440,9 +440,7 @@
             });
         }
 
-        document.getElementById('closeBtn').addEventListener('click', () => {
-            window.close();
-        });
+
     </script>
 </body>
 
