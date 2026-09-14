@@ -92,6 +92,37 @@ class LiveEnhancementTests(unittest.TestCase):
                 self.assertEqual(self.t.transcriptions[0], before)
                 self.assertFalse(self.t.translate_executor.jobs)
 
+    def test_stop_finishes_cancelled_translation_states(self):
+        self.t.transcriptions.extend([
+            {'id': 8, 'revision': 2, 'translation_status': 'pending'},
+            {'id': 9, 'revision': 1, 'translation_status': 'translating'}])
+        with patch.object(self.t, 'capture_thread', None), \
+                patch.object(self.t, 'transcribe_thread', None), \
+                patch.object(self.t, '_close_active_audio_stream'), \
+                patch.object(self.t, '_drain_audio_queue'), \
+                patch.object(buyedektir.socketio, 'emit') as emit:
+            self.t.stop_capture()
+        self.assertEqual([r['translation_status'] for r in self.t.transcriptions],
+                         ['done', 'skipped', 'skipped'])
+        statuses = [c.args[1] for c in emit.call_args_list
+                    if c.args[0] == 'transcription_translation_status']
+        self.assertEqual(statuses, [
+            {'id': 8, 'status': 'skipped', 'revision': 2},
+            {'id': 9, 'status': 'skipped', 'revision': 1}])
+
+    def test_correction_preparation_failure_is_atomic(self):
+        before = dict(self.t.transcriptions[0])
+        with patch.object(self.t.translator, 'snapshot_request', side_effect=RuntimeError('config unavailable')), \
+                patch.object(buyedektir.socketio, 'emit') as emit:
+            response = self.client.post('/api/transcriptions/7/correct', json={
+                'text': 'yeni söz', 'revision': 0})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.t.transcriptions[0], before)
+        self.assertEqual(self.t.conversation_turns[0]['text'], 'eski söz')
+        self.assertEqual(list(self.t.context_buffer), ['eski söz'])
+        self.assertFalse(self.t.translate_executor.jobs)
+        emit.assert_not_called()
+
     def test_correction_keeps_selected_source_language(self):
         self.t.transcriptions[0]['source_lang'] = 'EN'
         captured = []

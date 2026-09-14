@@ -3499,6 +3499,13 @@ class WhisperWebTranscriber:
             self._effective_silence = self.silence_duration
             self.is_running = False
             self._result_generation += 1
+            # Eski neslin işçileri artık sonuç yazamaz; bekleyiş de açık kalmasın.
+            for record in self.transcriptions:
+                if record.get('translation_status') in ('pending', 'translating'):
+                    record['translation_status'] = 'skipped'
+                    socketio.emit('transcription_translation_status', {
+                        'id': record['id'], 'status': 'skipped',
+                        'revision': record.get('revision', 0)})
             capture_thread = self.capture_thread
             transcribe_thread = self.transcribe_thread
 
@@ -5240,6 +5247,17 @@ def correct_transcription(transcript_id):
             return jsonify({'success': False, 'error': 'Kayıt başka bir yerde değişti. Güncel metni açıp tekrar deneyin.', 'record': dict(record)}), 409
         if record.get('text') == text:
             return jsonify({'success': True, 'record': dict(record)})
+        # Hazırlık başarısızsa eski metin, çeviri ve konuşma belleği birlikte korunsun.
+        try:
+            snapshot = transcriber.translator.snapshot_request(
+                source_lang=record.get('source_lang') or record.get('model_language') or 'AUTO',
+                target_lang=record.get('target_lang') or 'TR')
+            snapshot['user_initiated'] = True
+            snapshot['conversation_context'] = transcriber._translation_context_unlocked(transcript_id)
+            snapshot['glossary_note'] = transcriber.get_glossary_prompt(snapshot['target_lang'], False)
+        except Exception:
+            _record_health_error('correction_prepare_failed')
+            return jsonify({'success': False, 'error': 'Çeviri hazırlanamadı. Metin değiştirilmedi; yeniden deneyin.'}), 503
         record.update(text=text, revision=revision + 1, corrected=True, translation_status='pending')
         record.pop('translation', None)
         record.pop('romanized', None)
@@ -5249,12 +5267,6 @@ def correct_transcription(transcript_id):
         transcriber.context_buffer.clear()
         transcriber.context_buffer.extend(r['text'] for r in list(transcriber.transcriptions)[-10:]
                                          if r.get('source') != 'ptt' and r.get('text'))
-        snapshot = transcriber.translator.snapshot_request(
-            source_lang=record.get('source_lang') or record.get('model_language') or 'AUTO',
-            target_lang=record.get('target_lang') or 'TR')
-        snapshot['user_initiated'] = True
-        snapshot['conversation_context'] = transcriber._translation_context_unlocked(transcript_id)
-        snapshot['glossary_note'] = transcriber.get_glossary_prompt(snapshot['target_lang'], False)
         session, generation = transcriber._session_id, transcriber._result_generation
         # Düzeltme olayı çeviri işinden önce yayılır; UI eski çeviriyi önce kaldırır.
         socketio.emit('transcription_corrected', dict(record))
