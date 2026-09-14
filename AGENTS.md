@@ -2,6 +2,14 @@
 
 This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
+## Yeni oturumda önce oku
+
+- Konuşma geçmişinin mevcut olduğunu varsayma. Önce bu dosyayı, [BAŞLANGIÇ rehberini](BASLANGIC.md), ardından [devir indeksindeki](DEVIR-NOTU.md) güncel notu oku. Güncel not önceki bir soruna atıf yapıyorsa ilgili eski notu da oku.
+- Kullanıcı gerekli geliştirme araçlarını, bağımlılıkları ve modelleri indirmeye/kurmaya izin verdi. İş için gereken kurulumu tekrar izin istemeden yap; proje için `.venv` ve `npm ci` kullan, resmi kaynakları tercih et. Ücretli satın alma, hesap girişi, diski silme/format veya başka projelerin verilerini değiştirme bu izne dahil değildir. Kullanıcı girişini/anahtarını tahmin etme veya notlara yazma.
+- Başlangıçta `git status --short`, dal, HEAD ve origin adresini kontrol et. Kullanıcının mevcut değişikliklerini silme veya kendi değişikliklerinmiş gibi commit etme. Çalışma ağacı kirliyse dosyaların kapsamını incele; yalnız kendi çalışmanı sahnele.
+- Her tamamlanan düzeltme/geliştirme grubu için uygun testleri çalıştır, kod commit'i oluştur, tarihli devir ve kök indeksi güncelle, belge commit'i oluştur ve push et. Sadece plan veya “yapabilirim” yanıtında kalma. Ayrıntılı yayın sırası aşağıda ve BASLANGIC.md içindedir.
+- Format sonrası eski mutlak kullanıcı yollarını, `.venv` ortamını, oturum açmayı ve kurulu programları geçerli sayma. Gerçek makineyi incele. Önceki notlardaki sürümler çalışan bir kurulum garantisi değildir.
+
 ## What this is
 
 Whisper Pro is a Windows desktop app for **live, real-time conversation across languages**. It captures system audio (or a microphone), transcribes the other party's speech with faster-whisper, and generates AI reply suggestions. The defining workflow: the user reads the **Turkish phonetic spelling** (`romanized`/`okunuş`) of a suggested reply aloud to speak back in a language they don't know (Japanese, Arabic, Chinese, Russian, Spanish, etc.). Optimize for that read-aloud use — pronunciations must be effortless to read and replies must sound natural to a native speaker.
