@@ -4332,6 +4332,7 @@ class WhisperWebTranscriber:
             self._set_translation_status(transcription_id, 'skipped', session_id, result_generation)
             return
         translation_lock_held = False
+        result_saved = False
         try:
             self._set_translation_status(transcription_id, 'translating', session_id, result_generation)
             translation_started = time.perf_counter()
@@ -4340,7 +4341,13 @@ class WhisperWebTranscriber:
                 request_snapshot=request_snapshot,
             )
             translation_elapsed_ms = (time.perf_counter() - translation_started) * 1000.0
-            self._record_latency('translation', translation_elapsed_ms)
+            # Eski istek yeni oturumun gecikme ölçümlerine karışmasın.
+            with self._lifecycle_lock:
+                if (session_id != self._session_id
+                        or result_generation != self._result_generation):
+                    return
+                self._record_latency('translation', translation_elapsed_ms)
+            translation = translation.strip() if isinstance(translation, str) else None
             if not translation:
                 self._set_translation_status(transcription_id, 'failed', session_id, result_generation)
                 return
@@ -4368,6 +4375,7 @@ class WhisperWebTranscriber:
                     tr['translation'] = translation
                     tr['translation_status'] = 'done'
                     break
+            result_saved = True
             socketio.emit('transcription_translation', {
                 'id': transcription_id,
                 'translation': translation,
@@ -4381,7 +4389,9 @@ class WhisperWebTranscriber:
             if translation_lock_held:
                 self._lifecycle_lock.release()
             _record_health_error('translation_failed')
-            self._set_translation_status(transcription_id, 'failed', session_id, result_generation)
+            # Sonuç tesliminden sonraki bildirim/dosya hatası çeviriyi bozmasın.
+            if not result_saved:
+                self._set_translation_status(transcription_id, 'failed', session_id, result_generation)
             logger.error(f"Async çeviri hatasi: {e}", exc_info=True)
 
 # Global transcriber instance
