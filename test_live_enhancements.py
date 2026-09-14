@@ -29,6 +29,12 @@ class LiveEnhancementTests(unittest.TestCase):
         self.t = buyedektir.transcriber
         self.client = buyedektir.app.test_client()
         self.client.environ_base['HTTP_X_WHISPER_TOKEN'] = buyedektir.APP_TOKEN
+        original_post = self.client.post
+        def post_with_instance(url, **kwargs):
+            if url.endswith('/correct') and isinstance(kwargs.get('json'), dict):
+                kwargs['json'].setdefault('instance_id', buyedektir.INSTANCE_ID)
+            return original_post(url, **kwargs)
+        self.client.post = post_with_instance
         self.saved = {key: getattr(self.t, key) for key in (
             'transcriptions', 'conversation_turns', 'context_buffer',
             'translate_executor', 'translator', 'translation_context',
@@ -91,6 +97,33 @@ class LiveEnhancementTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertEqual(self.t.transcriptions[0], before)
                 self.assertFalse(self.t.translate_executor.jobs)
+
+    def test_correction_from_previous_backend_cannot_edit_reused_id(self):
+        before = dict(self.t.transcriptions[0])
+        for instance_id in ('previous-backend', None):
+            response = self.client.post('/api/transcriptions/7/correct', json={
+                'text': 'eski pencereden gelen metin', 'revision': 0, 'instance_id': instance_id})
+            self.assertEqual(response.status_code, 409)
+            self.assertNotIn('record', response.json)
+            self.assertEqual(self.t.transcriptions[0], before)
+            self.assertFalse(self.t.translate_executor.jobs)
+
+    def test_cancelled_asr_does_not_pollute_latency(self):
+        import queue
+        from types import SimpleNamespace
+        pending = queue.Queue()
+        pending.put(np.zeros(480, dtype=np.int16))
+        def cancelled_transcribe(*args, **kwargs):
+            self.t._result_generation += 1
+            self.t.is_running = False
+            return [], SimpleNamespace()
+        self.t.is_running = True
+        with patch.object(self.t, 'audio_queue', pending), \
+                patch.object(self.t, 'current_model', SimpleNamespace(transcribe=cancelled_transcribe)), \
+                patch.object(self.t, 'get_context_prompt', return_value=''), \
+                patch.object(self.t, '_record_latency') as latency:
+            self.t._transcribe_audio(self.t._session_id)
+        latency.assert_not_called()
 
     def test_stop_finishes_cancelled_translation_states(self):
         self.t.transcriptions.extend([

@@ -305,13 +305,15 @@ app.whenReady().then(async () => {
         const follows = list.scrollTop===0 && document.getElementById('backToLive').hidden;
         const id=1010;
         _replyTargetId=null;
+        transcriptNode(id).dataset.instanceId='original-backend';
         openTranscriptEditor(id);
         let editor=transcriptNode(id).querySelector('.transcript-editor');
         editor.querySelector('textarea').value='Düzeltilmiş cümle';
         let finish, count=0;
-        window.fetch=()=>{count++;return new Promise(resolve=>{finish=resolve;});};
+        let correctionInstance;
+        window.fetch=(url, options)=>{correctionInstance=JSON.parse(options.body).instance_id;count++;return new Promise(resolve=>{finish=resolve;});};
         const save=saveTranscriptCorrection(id); await saveTranscriptCorrection(id);
-        const duplicateBlocked=count===1 && editor.dataset.busy==='true';
+        const duplicateBlocked=count===1 && editor.dataset.busy==='true' && correctionInstance==='original-backend';
         finish({ok:false,status:503,json:async()=>({success:false,error:'Bağlantı yok'})}); await save;
         const draftKept=editor.querySelector('textarea').value==='Düzeltilmiş cümle' && editor.dataset.busy==='false';
         window.fetch=async()=>({ok:false,status:409,json:async()=>({success:false,record:{id,text:'Başka penceredeki düzeltme',revision:1,translation_status:'pending'}})});

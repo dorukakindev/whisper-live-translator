@@ -43,6 +43,7 @@ function decorateTranscript(data) {
     if (!item) return;
     window._transcriptRevisions[data.id] = Math.max(window._transcriptRevisions[data.id] || 0, data.revision || 0);
     item.dataset.revision = String(window._transcriptRevisions[data.id]);
+    item.dataset.instanceId = data.instance_id || _backendInstanceId || '';
     if (['mic', 'ptt'].includes(data.source) || item.querySelector('.transcript-edit-button')) return;
     const button = document.createElement('button');
     button.type = 'button';
@@ -63,6 +64,7 @@ function openTranscriptEditor(id) {
     editor.className = 'transcript-editor';
     editor.noValidate = true;
     editor.dataset.revision = String(window._transcriptRevisions[id] || 0);
+    editor.dataset.instanceId = item.dataset.instanceId || _backendInstanceId || '';
     editor.dataset.refreshAnswer = String(Boolean(item.querySelector('.answer-option') || _replyTargetId === String(id)));
     editor.setAttribute('onsubmit', `event.preventDefault();saveTranscriptCorrection(${Number(id)})`);
     editor.innerHTML = `<label for="correct-text-${Number(id)}">Duyulan metin</label>
@@ -145,7 +147,7 @@ async function saveTranscriptCorrection(id) {
     try {
         const response = await fetch('/api/transcriptions/' + Number(id) + '/correct', {
             method: 'POST', headers: {'Content-Type': 'application/json'}, signal: controller.signal,
-            body: JSON.stringify({text, revision: Number(editor.dataset.revision)})
+            body: JSON.stringify({text, revision: Number(editor.dataset.revision), instance_id: editor.dataset.instanceId})
         });
         const data = await response.json();
         if (!editor.isConnected || generation !== _hydrationGeneration) return;

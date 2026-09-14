@@ -4082,14 +4082,15 @@ class WhisperWebTranscriber:
                     if session_id == self._session_id:
                         self._asr_active = False
                 asr_elapsed_ms = (time.perf_counter() - asr_started) * 1000.0
-                self._record_latency('asr', asr_elapsed_ms)
 
                 # Stop/Sifirla model calisirken geldiyse bu pahali is bitmis olsa da
                 # eski sonucu konusma hafizasina, dosyaya veya UI'ya geri sizdirma.
-                if (session_id != self._session_id
-                        or result_generation != self._result_generation
-                        or not self.is_running):
-                    continue
+                with self._lifecycle_lock:
+                    if (session_id != self._session_id
+                            or result_generation != self._result_generation
+                            or not self.is_running):
+                        continue
+                    self._record_latency('asr', asr_elapsed_ms)
                 
                 full_text = _join_transcription_segments(segments)
 
@@ -5231,6 +5232,8 @@ def audio_test():
 def correct_transcription(transcript_id):
     """Düzeltmeyi sürüm denetimiyle kaydet; eski çeviriyi anında geçersiz kıl."""
     data = request.json or {}
+    if data.get('instance_id') != INSTANCE_ID:
+        return jsonify({'success': False, 'error': 'Uygulama yeniden başlatıldı. Güncel konuşmayı açıp tekrar deneyin.'}), 409
     text = data.get('text')
     revision = data.get('revision')
     if (not isinstance(text, str) or not 1 <= len(text.strip()) <= 4000
