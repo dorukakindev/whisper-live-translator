@@ -2657,6 +2657,7 @@ class WhisperWebTranscriber:
         
         # Ayarlar
         self.silence_duration = DEFAULTS['silence_duration']
+        self.game_mode = False
         self.adaptive_silence = True
         self.translation_context = True
         self._audio_test_active = False
@@ -3282,11 +3283,21 @@ class WhisperWebTranscriber:
     def get_settings_snapshot(self):
         """Birden fazla pencerenin ayni backend ayarlarini okumasini sagla."""
         return {
+            'game_mode': self.game_mode,
             'silence_duration': self.silence_duration,
             'adaptive_silence': self.adaptive_silence,
             'translation_context': self.translation_context,
             'vad_level': self.vad_level,
             'partial_enabled': self.partial_enabled,
+        }
+
+    def get_capture_profile(self):
+        """Oyun profili normal ayarları değiştirmez; mikrofonu etkilemez."""
+        gaming = self.game_mode and self.capture_mode == 'system'
+        return {
+            'silence': 0.9 if gaming else self.silence_duration,
+            'adaptive': True if gaming else self.adaptive_silence,
+            'max_utterance': min(self.MAX_UTTERANCE_S, 10.0) if gaming else self.MAX_UTTERANCE_S,
         }
     
     def get_audio_devices(self):
@@ -3811,7 +3822,8 @@ class WhisperWebTranscriber:
                         # yerine SON penceredeki en sessiz chunk sinirinda secilir
                         # (kelimeyi ortadan bolmemek icin); kesilen kuyruk yeni
                         # tamponun basina devredilir, ses kaybolmaz.
-                        if len(audio_buffer) * chunk_seconds >= self.MAX_UTTERANCE_S:
+                        max_utterance = self.get_capture_profile()['max_utterance']
+                        if len(audio_buffer) * chunk_seconds >= max_utterance:
                             split_idx = self._find_quiet_split_index(audio_buffer, chunk_seconds)
                             to_send = audio_buffer[:split_idx]
                             tail = audio_buffer[split_idx:]
@@ -3820,7 +3832,7 @@ class WhisperWebTranscriber:
                                 self._enqueue_audio(full_audio, session_id, capture_generation)
                                 socketio.emit('voice_activity', {'status': 'processing'})
                                 logger.info(
-                                    f"[max-utterance] {self.MAX_UTTERANCE_S:.0f}sn asildi; "
+                                    f"[max-utterance] {max_utterance:.0f}sn asildi; "
                                     f"{len(to_send) * chunk_seconds:.1f}sn gonderildi, "
                                     f"{len(tail) * chunk_seconds:.1f}sn devredildi"
                                 )
@@ -3870,13 +3882,14 @@ class WhisperWebTranscriber:
                             # kullanicinin oturum SIRASINDA degistirdigi sessizlik
                             # suresi aninda etki eder (eskiden yeniden baslatma gerekirdi).
                             self._capture_phase = 'waiting_silence'
+                            profile = self.get_capture_profile()
                             self._effective_silence = adaptive_silence_seconds(
-                                self.silence_duration,
+                                profile['silence'],
                                 max(0.0, (len(audio_buffer) - silence_counter) * chunk_seconds),
-                                recent_pauses, enabled=self.adaptive_silence,
+                                recent_pauses, enabled=profile['adaptive'],
                             )
-                            if not self.adaptive_silence:
-                                self._effective_silence = self.silence_duration
+                            if not profile['adaptive']:
+                                self._effective_silence = profile['silence']
                             max_silence = max(1, int(self._effective_silence / chunk_seconds))
                             if silence_counter >= max_silence:
                                 total_duration = len(audio_buffer) * chunk_seconds
@@ -4582,6 +4595,18 @@ def update_settings():
 def get_settings():
     """Runtime ses ayarlarini yeni pencere/sekme ile esitle."""
     return jsonify({'success': True, 'settings': transcriber.get_settings_snapshot()})
+
+
+@app.route('/api/game_mode', methods=['POST'])
+def game_mode():
+    enabled = (request.get_json(silent=True) or {}).get('enabled')
+    if not isinstance(enabled, bool):
+        return jsonify({'success': False, 'error': 'Oyun modu açık/kapalı değeri gerekli.'}), 400
+    with transcriber._lifecycle_lock:
+        transcriber.game_mode = enabled
+        snapshot = transcriber.get_settings_snapshot()
+    socketio.emit('settings_updated', snapshot)
+    return jsonify({'success': True, 'settings': snapshot})
 
 @app.route('/api/hf_token', methods=['POST'])
 def hf_token():

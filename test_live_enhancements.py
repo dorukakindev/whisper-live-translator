@@ -98,6 +98,24 @@ class LiveEnhancementTests(unittest.TestCase):
                 self.assertEqual(self.t.transcriptions[0], before)
                 self.assertFalse(self.t.translate_executor.jobs)
 
+    def test_game_profile_preserves_normal_settings_and_mic(self):
+        with patch.object(self.t, 'game_mode', False), patch.object(self.t, 'capture_mode', 'system'), \
+                patch.object(self.t, 'silence_duration', 1.7), patch.object(self.t, 'adaptive_silence', False):
+            original = self.t.get_capture_profile()
+            for _ in range(2):
+                response = self.client.post('/api/game_mode', json={'enabled': True})
+                self.assertTrue(response.json['settings']['game_mode'])
+                self.assertEqual(self.t.get_capture_profile(), {'silence': .9, 'adaptive': True, 'max_utterance': 10.0})
+                self.assertEqual(self.t.silence_duration, 1.7)
+                self.t.capture_mode = 'mic'
+                self.assertEqual(self.t.get_capture_profile(), original)
+                self.t.capture_mode = 'system'
+            self.client.post('/api/game_mode', json={'enabled': False})
+            self.assertEqual(self.t.get_capture_profile(), original)
+            for value in ('false', 1, None):
+                self.assertEqual(self.client.post('/api/game_mode', json={'enabled': value}).status_code, 400)
+            self.assertFalse(self.t.game_mode)
+
     def test_correction_from_previous_backend_cannot_edit_reused_id(self):
         before = dict(self.t.transcriptions[0])
         for instance_id in ('previous-backend', None):

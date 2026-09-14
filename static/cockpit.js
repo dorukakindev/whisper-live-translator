@@ -1,5 +1,46 @@
 "use strict";
 
+let _gameModeEnabled = false;
+let _gameModeBusy = false;
+function renderGameMode(snapshot) {
+    if (!snapshot || typeof snapshot.game_mode !== 'boolean') return;
+    _gameModeEnabled = snapshot.game_mode;
+    const button = document.getElementById('gameModeBtn');
+    if (!button) return;
+    button.setAttribute('aria-pressed', String(_gameModeEnabled));
+    button.textContent = _gameModeEnabled ? 'Oyun modu açık' : 'Oyun modu';
+    button.title = _gameModeEnabled ? 'Sistem sesi: 0,9 sn uyarlanabilir bekleme, 10 sn konuşma sınırı. Kapatınca normal ayarlar geçerli.' : 'Dengeli hızlı diyalog profili ve çeviri kutusu';
+}
+async function toggleGameMode() {
+    if (_gameModeBusy) return;
+    if (!window.electronAPI?.overlayControl) {
+        showAlert('Oyun modunu masaüstü uygulamasından açabilirsin.', 'info'); return;
+    }
+    const enabled = !_gameModeEnabled;
+    const button = document.getElementById('gameModeBtn');
+    _gameModeBusy = true; button.disabled = true; button.setAttribute('aria-busy', 'true');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+        if (enabled) {
+            const opened = await window.electronAPI.overlayControl('open');
+            if (!opened.success) throw new Error('Çeviri kutusu açılamadı; bağlantının hazır olmasını bekle.');
+        }
+        const response = await fetch('/api/game_mode', {method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({enabled}), signal:controller.signal});
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Oyun modu değiştirilemedi.');
+        applyRuntimeSettings(data.settings);
+        if (!enabled) await window.electronAPI.overlayControl('close');
+        showAlert(enabled ? 'Oyun modu açık: dengeli hızlı diyalog profili. Sistem sesi ve çeviri açıkken Başlat’ı kullan.' : 'Oyun modu kapalı; normal ses ayarların geçerli.', 'info');
+    } catch (error) {
+        showAlert(error.name === 'AbortError' ? 'İstek zaman aşımına uğradı; modu kontrol edip tekrar dene.' : error.message, 'error');
+        hydrateRuntimeSettings();
+    } finally {
+        clearTimeout(timeout); _gameModeBusy = false; button.disabled = false; button.removeAttribute('aria-busy');
+    }
+}
+
 async function openGameOverlay() {
     if (!window.electronAPI?.overlayControl) {
         showAlert('Oyun çeviri kutusunu masaüstü uygulamasından açabilirsin.', 'info');

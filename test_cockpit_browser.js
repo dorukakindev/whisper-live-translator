@@ -447,6 +447,20 @@ app.whenReady().then(async () => {
     await new Promise(resolve => setTimeout(resolve, 300));
     fs.writeFileSync(path.join(outputDir, '600x800-reply.png'), (await win.webContents.capturePage()).toPNG());
     // Yardımcı pencere aynı renk tokenlarını kullanır; kapanış platform işidir.
+    const modeChecks = await win.webContents.executeJavaScript(`(async () => {
+        const oldFetch=window.fetch, oldApi=window.electronAPI;
+        const commands=[];
+        window.electronAPI={overlayControl:async action=>{commands.push(action);return {success:true};}};
+        window.fetch=async (_url,options)=>({ok:true,json:async()=>({success:true,settings:{game_mode:JSON.parse(options.body).enabled}})});
+        renderGameMode({game_mode:false});
+        await toggleGameMode();
+        const on=document.getElementById('gameModeBtn').getAttribute('aria-pressed')==='true' && commands.includes('open');
+        await toggleGameMode();
+        const off=document.getElementById('gameModeBtn').getAttribute('aria-pressed')==='false' && commands.includes('close');
+        window.fetch=oldFetch;window.electronAPI=oldApi;
+        return {on,off};
+    })()`);
+    assert(modeChecks.on && modeChecks.off, JSON.stringify(modeChecks));
     let overlay = fs.readFileSync(path.join(__dirname, 'templates', 'overlay.html'), 'utf8');
     overlay = overlay.replace('<script src="/static/socket.io.min.js"></script>', '<script>window.overlayEvents={};function io(){return {on(name,fn){overlayEvents[name]=fn;}};}</script>');
     for (const name of ['runtime-safety.js', 'html-utils.js']) overlay = overlay.replace(`<script src="/static/${name}"></script>`, `<script>${fs.readFileSync(path.join(__dirname,'static',name),'utf8')}</script>`);

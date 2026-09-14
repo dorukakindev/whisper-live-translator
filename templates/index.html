@@ -1562,7 +1562,7 @@
                 </div>
             </div>
             <div class="header-actions">
-                <button class="btn" type="button" onclick="openGameOverlay()" title="Oyun üstünde canlı çeviri · Ctrl+Shift+O">Oyun çevirisi</button>
+                <button class="btn" id="gameModeBtn" type="button" aria-pressed="false" onclick="toggleGameMode()" title="Dengeli hızlı diyalog profili ve çeviri kutusu">Oyun modu</button>
                 <div class="header-live-state" id="connectionState" role="status" aria-live="polite">Bağlanıyor</div>
                 <button class="btn" id="controlsToggleBtn" type="button" aria-controls="controlPanel"
                     aria-expanded="true" onclick="toggleControlPanel()" title="Ayar panelini daralt">
@@ -2507,6 +2507,7 @@
         }
 
         function applyRuntimeSettings(snapshot) {
+            if (typeof renderGameMode === 'function') renderGameMode(snapshot);
             if (!snapshot || typeof snapshot !== 'object') return;
             for (const [key, id] of [['adaptive_silence','adaptiveSilence'], ['translation_context','translationContext']]) {
                 const control = document.getElementById(id);

@@ -57,7 +57,7 @@ ipcMain.handle('overlay-control', (event, action) => {
             || event.senderFrame !== sender.mainFrame) return {success: false};
     if (action === 'open') { createOverlayWindow(); return {success: Boolean(overlayWindow)}; }
     if (action === 'lock') return {success: setOverlayLocked(!overlayLocked), locked: overlayLocked};
-    if (action === 'close' && sender === overlayWindow?.webContents) overlayWindow.close();
+    if (action === 'close' && overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.close();
     return {success: true, locked: overlayLocked, lockShortcut: overlayLockShortcut};
 });
 let pythonProcess;

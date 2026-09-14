@@ -51,6 +51,7 @@ def capture_case(prefix, speech, vad_fails=False, reset_at=None, ptt=False):
         _enqueue_audio=lambda data, *args: captured.append(data.copy()))
 
     read_index = 0
+    owner.get_capture_profile = lambda: {'silence': owner.silence_duration, 'adaptive': False, 'max_utterance': owner.MAX_UTTERANCE_S}
     def read(count, **kwargs):
         nonlocal read_index
         read_index += 1

@@ -2074,3 +2074,6 @@ body.light-mode .reply-choice[aria-pressed="true"] .reply-choice-number { color:
 .audio-test-tools button:disabled, .correction-actions button:disabled { opacity: .5; cursor: wait; }
 .audio-test-tools button:focus-visible, .correction-actions button:focus-visible, #backToLive:focus-visible, .pipeline-details summary:focus-visible { outline: 2px solid var(--wp-accent); outline-offset: 3px; }
 @media (max-width: 600px) { .live-flow-strip { flex-wrap: wrap; padding: 8px 14px; } .pipeline-details { padding-left: 14px; padding-right: 14px; } }
+
+#gameModeBtn { min-width: 126px; }
+#gameModeBtn[aria-pressed='true'] { color: var(--wp-text); border-color: var(--wp-accent); background: color-mix(in srgb, var(--wp-accent) 18%, var(--wp-surface)); }
