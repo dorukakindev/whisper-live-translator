@@ -2,10 +2,18 @@
 
 Whisper Pro is a Windows desktop assistant for live conversations across languages. It captures microphone or Windows system audio, transcribes speech locally with faster-whisper, optionally translates incoming speech, and generates reply suggestions with Turkish-friendly pronunciation guides.
 
+![Whisper Pro live conversation and reply suggestions](docs/media/whisper-pro-conversation.png)
+
+The live workspace keeps the full conversation readable while reply suggestions stay ready beside it. Each reply includes its native wording, Turkish meaning, and a pronunciation line designed to be read aloud.
+
+![Whisper Pro reading mode demonstration](docs/media/whisper-pro-demo.gif)
+
+[Watch the short MP4 demo](docs/media/whisper-pro-demo.mp4) · [View reading mode at full resolution](docs/media/whisper-pro-reading-mode.png)
+
+> The media above is rendered from the real Electron UI with synthetic conversation data and an English presentation layer. The shipping interface is currently primarily Turkish.
+
 > [!IMPORTANT]
 > This project is under active development. Never commit API keys or private transcripts, and review the known limitations before important use.
-
-![Whisper Pro game overlay](docs/images/game-overlay.png)
 
 ## Highlights
 
