@@ -1,5 +1,5 @@
 # WHISPER PRO — GENEL KOD DENETİMİ, BUG ve GELİŞTİRME RAPORU
-**Tarih:** 15 Eylül 2026 (ikinci derin tur ile genişletildi)
+**Tarih:** 15 Eylül 2026 (üçüncü derin tur ile genişletildi)
 **Kapsam:** Tüm uygulama (`buyedektir.py`, `audio_diagnostics.py`, `templates/index.html`, `templates/overlay.html`, `static/*.js`, `main.js`, `main_helpers.js`, `preload.js`, `transkribe.py`, `build.js`, `launcher_whisper.py`, `başlat.bat`, `requirements.txt`, `.venv` kurulu paket sürümleri)
 **Durum:** Kodda değişiklik yapılmadı — yalnızca denetim ve raporlama.
 **Önceki raporlar:** `BUG_TARAMASI_TAM_RAPOR.md` (15 kritik + 27 yüksek + 35 orta) ve `DERIN_BUG_TARAMASI_RAPORU.md` (30 madde) bu rapora konsolide edildi; her madde güncel koda karşı tek tek doğrulandı.
@@ -10,9 +10,11 @@
 
 Önceki iki rapordaki **30 + 70+ bulgunun büyük çoğunluğu güncel kodda düzeltilmiş** durumda. İkinci derin turda ilk rapordaki **A-06 ve A-07'nin de aslında düzeltilmiş olduğu** doğrulandı (bkz. §2 düzeltmeleri) — ilk turdaki kanıt satırları yanıltıcıydı.
 
-İkinci turda backend'in tamamı, Electron ana süreci, overlay, bağımsız betikler ve **kurulu `.venv` paket sürümleri** de incelendi; **10 yeni bulgu** çıktı (B-01..B-10), en önemlisi: **konuşmacı tanıma (diarization) bu ortamda tamamen ölü** — pyannote.audio 4.x API kırılması + torchcodec eksikliği.
+İkinci turda backend'in tamamı, Electron ana süreci, overlay, bağımsız betikler ve **kurulu `.venv` paket sürümleri** de incelendi; **10 yeni bulgu** çıktı (B-01..B-09), en önemlisi: **konuşmacı tanıma (diarization) bu ortamda tamamen ölü** — pyannote.audio 4.x API kırılması + torchcodec eksikliği.
 
-**Hâlâ açık doğrulanmış bulgular — 14 adet:**
+Üçüncü turda kalan statik JS modülleri (`cockpit.js`, `live-flow.js`, `reading-mode.js`, `runtime-safety.js`, `html-utils.js`, `quick-phrases.js`), `audio_diagnostics.py`, Socket.IO bağlantı/auth sınırı, ayar-kalıcılık yarışları, `main.js`'in tamamı, mic executor yaşam döngüsü, `transkribe.py`, `build.js`, `launcher_whisper.py`, overlay hydration/socket yarışları ve çeviri worker'ının tamamı incelendi; **6 yeni bulgu** çıktı (C-01..C-06) — ikisi **canlı Flask test client ile doğrudan üretilerek kanıtlandı**.
+
+**Hâlâ açık doğrulanmış bulgular — 20 adet:**
 
 | ID | Önem | Özet | Kaynak |
 |----|------|------|--------|
@@ -30,8 +32,14 @@
 | B-07 | � | `generate_ai_response` `transcript_id` int değilse bağlam kaydı kendini de içeriyor | Yeni |
 | B-08 | 🔵 | `target_lang` doğrulanmıyor (`None`/dize-dışı → prompt'ta "None") | Yeni |
 | B-09 | � | Küçük sağlamlık boşlukları demeti (bool-coercion, PyAudio leak, durum tutarsızlığı, mojibake, ölü DEFAULTS anahtarları) | Yeni |
+| C-01 | 🟠 | `deepl_config` başarısız anahtar testi runtime provider+anahtarı bozuyor (canlı üretildi) | 3. tur |
+| C-02 | 🟠 | Socket.IO bağlantısında token yok — canlı transkript akışı tokensuz okunabilir (canlı üretildi) | 3. tur |
+| C-03 | 🟡 | `capture_mode='mic'` Türkçe dikteyi seçili `whisper_language` ile çözümlüyor | 3. tur |
+| C-04 | 🟡 | Ctrl-PTT ve Global-PTT'de istek sıralaması yok → `ptt_active` takılabilir | 3. tur |
+| C-05 | 🔵 | Backend restart'ta `_transcriptRevisions` temizlenmiyor → eski id'li düzeltmeler düşebilir | 3. tur |
+| C-06 | 🔵 | `transkribe.py` `torch.cuda.is_available()` kullanıyor — ana uygulamadaki düzeltme burada yok | 3. tur |
 
-Ayrıca **tasarım gereği 1 bilinen sınırlama** (telaffuz sözlüğü tam-eşleşme) ve **14 geliştirme önerisi** (§4) var.
+Ayrıca **tasarım gereği 1 bilinen sınırlama** (telaffuz sözlüğü tam-eşleşme) ve **16 geliştirme önerisi** (§4) var.
 
 ---
 
@@ -119,6 +127,43 @@ Ayrıca **tasarım gereği 1 bilinen sınırlama** (telaffuz sözlüğü tam-eş
 * **`__main__` başlangıç bannerı (6139-6143):** Bozulmuş emoji baytları (`"ğŸâ€â€ž"` vb.) — kaynak dosya bir noktada yanlış kodlamayla yazılmış; yalnız kozmetik (log/konsol çirkinliği).
 * **`__init__` (2661-2662):** `self.adaptive_silence = True` ve `self.translation_context = True` `DEFAULTS[...]` yerine sabit — `DEFAULTS`'taki aynı isimli anahtarlar fiilen ölü konfigürasyon (davranış aynı; tutarlılık notu).
 
+### [C-01] `deepl_config` başarısız anahtar testi runtime provider+anahtarı bozuyor 🟠
+* **Konum:** `buyedektir.py:4687-4706`; çağıran `templates/index.html:3010-3036` (`saveDeepLKey`).
+* **Mekanizma:** Route `translator._config_lock` altında `translator.provider = provider` (**koşulsuz**, 4688) ve `api_key` verildiyse `translator.api_key = <yeni anahtar>` (**testten önce**, 4701) yazar. DeepL testi kilit DIŞINDA çalışır (4719) ve başarısız olursa route `success:false` döner — ama mutasyon çoktan commit edilmiştir.
+* **Canlı kanıt (Flask test client, bu oturumda üretildi):** önce `provider='openai_reseller', enabled=True` iken `POST /api/deepl_config {api_key:'geçersiz', provider:'deepl'}` → yanıt `{'success': False, 'error': 'API key gerekli veya geçersiz'}`; sonrasında `translator.provider='deepl'`, `translator.api_key='geçersiz'`, `enabled=True` — yani geçersiz anahtarla çeviri açık kaldı.
+* **Etki:** Kullanıcı yanlış bir DeepL anahtarı deneyip "geçersiz" uyarısı alır; ama eski sağlayıcı (ör. çalışan openai_reseller) yerinden edilmiş ve canlı çeviri artık geçersiz anahtarla denenir → sonraki her transkriptte `translation_status: 'failed'`. Frontend hata dalında eski ayarı geri basmaz (yalnız uyarı gösterir). Provider-değiştirme denemesi de aynı şekilde eski çalışan sağlayıcıyı siler.
+* **Öneri:** Route testi yalnız verilen anahtarla yapmalı (zaten öyle: `test_api(str(api_key))`); test BAŞARILIYSA provider+anahtar commit edilmeli, değilse runtime'a dokunulmamalı. Ya da mutasyonu testten SONRA yap: önce `test_api(candidate)`, sonra kilit altında yaz.
+
+### [C-02] Socket.IO bağlantısında token doğrulaması yok 🟠
+* **Konum:** `buyedektir.py:119-128` (`require_local_app_token` yalnız `/api/` prefix'i) + `143` (`SocketIO(...)` — connect handler/auth yok; backend'de hiç `@socketio.on` handler yok, socket yalnız sunucu→istemci emit).
+* **Mekanizma:** Socket.IO handshake `/socket.io/` yolundan gider → `before_request` token kontrolünün dışında kalır. `cors_allowed_origins` yalnız Origin başlığını denetler: tarayıcı sayfaları engellenir ama **tarayıcı-olmayan yerel süreçler** Origin'i istedikleri gibi gönderir/atlar.
+* **Canlı kanıt (bu oturumda üretildi):** `socketio.test_client(app)` token'sız → `is_connected() == True`.
+* **Etki:** `/api/transcriptions` token isterken (doğru olarak) aynı verinin canlı akışı (`new_transcription`, `transcription_translation`, `ptt_mic_result` — özel konuşma içeriği) tokensuz okunabilir. Makinedeki herhangi bir süreç kullanıcının konuşmasını sessizce dinleyebilir. Tehdit modeli yerel olduğundan orta-düşük; ama token varken socket'i açık bırakmak tutarsız bir sınır.
+* **Öneri:** `@socketio.on('connect')`'e auth ekle: istemci `io({auth:{token: APP_TOKEN}})` göndersin; bilinmeyen token'a `return False`. Sayfalara token zaten `{{ app_token|tojson }}` ile gömülü.
+
+### [C-03] `capture_mode='mic'` seçili `whisper_language`'ı zorluyor — Türkçe dikte yabancı dilde çözümlenebilir 🟡
+* **Konum:** `buyedektir.py:3457-3460` (`self.whisper_language` koşulsuz istekten), `4054/4083` (`language=whisper_lang` mic modunda da); frontend `index.html:3805/3819` (her zaman radio değerini gönderir).
+* **Mekanizma:** Mic dikte modu Türkçe konuşma içindir (rol 'me', çeviri/AI yok). Fakat `start_capture` `capture_mode=='mic'` iken `whisper_language`'ı override ETMEZ: kullanıcı karşı taraf için 'ja' seçtiyse Türkçe dikte `language='ja'` ile çözümlenir → Whisper Türkçe sesi Japonca zorlar → anlamsız çıktı, kullanıcıya açıklama yok.
+* **Etki:** Mod değiştiren kullanıcı neden saçma transkript aldığını anlamaz. (Alt-PTT `process_mic_audio` 4969'da `language='tr'` zorlar — mikrofon dikte moduyla tutarsız.)
+* **Öneri:** `capture_mode=='mic'` iken `language='tr'` (veya `None`/auto) kullan — Alt-PTT ile aynı davranış. UI'da "mic modu Türkçe çalışır" ipucu zaten var (3417).
+
+### [C-04] Ctrl-PTT ve Global-PTT'de istek sıralaması yok → `ptt_active` takılabilir 🟡
+* **Konum:** `templates/index.html:5037-5043` (`setPtt` — bağımsız fetch, sıralama/keepalive yok) vs `5095` (`altPttCommandChain` — Alt-PTT serileşmiş); `main.js:438-484` (`sendPttRequest` — `globalPttRequestSerial` yalnız hata gösterimini korur, istek sırasını değil).
+* **Mekanizma:** Hızlı bas-bırakta `POST {active:true}` ve `POST {active:false}` ağda sıralanabilir → backend son yazanı uygular. Backend `/api/ptt` (4815-4820) kilidi doğru ama "son gelen kazanır" semantiği taşıyor — gecikmiş `true` isteği `false`'tan sonra varırsa `ptt_active` açık kalır (`MAX_PTT_S`=120 sn'ye dek). Aynı sınıf: global PTT toggle (main.js) — `active:false` yanıtı timeout'a uğrasa bile backend komutu uygulamış olabilir; `fail()` yerel bayrağı `false`'a çeker ama backend'e telafi isteği göndermez.
+* **Etki:** A-05 ile aynı semptom sınıfı (takılı PTT) ama farklı kök: istek sıralaması. Alt-PTT bu sorunu komut zinciriyle çözmüş; Ctrl-PTT ve global-PTT'de çözüm yok.
+* **Öneri:** `setPtt`'i `altPttCommandChain` deseniyle serileştir (veya tek sequence numarası gönderip backend'de eski sequence'i reddet); `sendPttRequest` timeout'unda telafi `active:false` gönder.
+
+### [C-05] Backend restart'ta `_transcriptRevisions` temizlenmiyor — geri dönüştürülmüş id'de düzeltme düşebilir 🔵
+* **Konum:** `templates/index.html:3619-3629` (`backendRestarted` dalı `transcriptionTexts`/`seenTranscriptionIds`/`prunedTranscriptionId`'ı temizler ama `window._transcriptRevisions`'ı değil); `static/live-flow.js:44` (`revisions[id] = max(eski, yeni)`), `90-95` (`revision <= revisions[id]` → düşür).
+* **Mekanizma:** Backend yeniden başlayınca `_next_transcription_id` 0'dan başlar → yeni kayıtlar eski id'leri geri kullanır. `decorateTranscript` eski (yüksek) revision'ı `max()` ile korur; sonra gelen `transcription_corrected` (revision=1) `applyTranscriptCorrection`'da `1 <= eskiRev` → **sessizce düşürülür**. Lazy temizleme (live-flow.js:182-184) yalnız `transcriptionTexts`'te olmayan id'leri siler — yeni kayıt eklendikten sonra o id map'te olduğundan eski revision hayatta kalır.
+* **Etki:** Dar kenar: backend restart + aynı id'nin yeniden kullanımı + o kaydın düzeltilmesi → kullanıcının düzeltmesi ekranda görünmez (409 değil, sessiz düşüş; backend kaydı kabul eder, socket olayı düşer).
+* **Öneri:** `backendRestarted` dalında `window._transcriptRevisions = {}` (ve overlay'deki karşılığı `lastTranscriptRevision` zaten `clearTranscript` ile sıfırlanıyor).
+
+### [C-06] `transkribe.py` `torch.cuda.is_available()` kullanıyor — ana uygulamadaki düzeltme burada yok 🔵
+* **Konum:** `transkribe.py` `detect_device` (`torch.cuda.is_available()` tabanlı) vs ana uygulamanın gerçek-tensor testi (CLAUDE.md: cuBLAS DLL adı değişince sessiz CPU düşüşü yaşanmıştı → gerçek `torch.zeros(1, device='cuda')` tahsisine geçildi).
+* **Mekanizma:** `is_available()` True döndürebilir ama `WhisperModel(device='cuda')` yüklemesi (transkribe.py:408) sürücü/cuBLAS uyumsuzluğunda patlar → iş hata ile biter, CPU fallback YOK (ana uygulamada var). Kullanıcı CPU'yu elle seçene kadar transkribe çalışmaz.
+* **Öneri:** `detect_device`'ı ana uygulamayla aynı gerçek-tensor testine al veya model yükleme hatasında `device='cpu'` ile tek otomatik deneme yap.
+
 ### Not — ilk tur düzeltmeleri
 * **A-06 gerçekte DÜZELTİLMİŞ:** `process_mic_audio`'daki `conversation_turns.append` `with transcriber._lifecycle_lock:` bloğunun içinde (`buyedektir.py:5097-5120`). İlk turdaki "kilit dışında" bulgusu iptal edildi → DERIN BUG-24 ve B-BE-001/016 artık ✅.
 * **A-07 gerçekte DÜZELTİLMİŞ:** CSP `<meta>` yok ama daha güçlüsü var — `set_browser_security_headers` (`buyedektir.py:104-116`) her yanıta `Content-Security-Policy` başlığı ekliyor (`default-src 'self'`, `object-src 'none'`, `frame-ancestors 'none'`). → TAM B-CFG-001 ✅.
@@ -151,6 +196,8 @@ Ayrıca **tasarım gereği 1 bilinen sınırlama** (telaffuz sözlüğü tam-eş
 | G-12 | **`context_buffer`'a rol/kaynak etiketi** — append anında kaynak saklanıp prompt'ta mic/ptt elensin | B-06'nın temiz çözümü |
 | G-13 | **`answer_question` toplam-süre üst sınırı** — çeviri yolunda retry zinciri ~3 dk sürebilir; ortak bir `deadline` parametresi | translate_executor tıkanmasını sınırlar |
 | G-14 | **Diarization/çeviri başarısızlığını UI'a taşı** — `speaker_identified` hiç gelmiyorsa veya `diarization_failed` sağlık kodu varsa durum çubuğunda uyarı | B-01/B-02 gibi sessiz ölüm vakalarını görünür kılar |
+| G-15 | **Socket auth** — `io({auth:{token}})` + `connect` handler | C-02'yi kapatır; frontend'e tek satır |
+| G-16 | **PTT istek kimliği/sequence'i** — backend'de eski sequence'i reddet | C-04'ün kök çözümü (sıralama bağımsız) |
 
 ---
 
@@ -219,8 +266,11 @@ Ayrıca **tasarım gereği 1 bilinen sınırlama** (telaffuz sözlüğü tam-eş
 | pyannote.audio kurulu sürüm | **4.0.4** — `SpeakerDiarization.apply` → `DiarizeOutput` (itertracks yok); `legacy=False` varsayılan → **B-01 kanıtı** |
 | torchcodec | `.venv`'de bozuk (`libtorchcodec_core8.dll` yüklenemiyor, torch 2.10.0+cu130) → **B-02 kanıtı** |
 | `git status` | Kod değişikliği yok; rapor/devir belgeleri untracked |
+| **3. tur:** `POST /api/deepl_config` geçersiz anahtarla (Flask test client) | 🔴 **C-01 üretildi:** `success:false` döner ama `provider='deepl'` + geçersiz `api_key` runtime'a yazılır, `enabled` açık kalır |
+| **3. tur:** `socketio.test_client(app)` tokensuz | 🔴 **C-02 üretildi:** `is_connected() == True` — handshake'de token yok |
+| **3. tur:** `py_compile` + `pyflakes` + `test_smoke.py` (tekrar) | ✅ hepsi geçti |
 
-**Çalıştırılmayan kontroller:** gerçek ses akışıyla uçtan uca test (mikrofon/sistem sesi), gerçek OpenAI/DeepL çağrıları, diarization'ın çalışan bir ortamda gözlemi (bu ortamda B-01 nedeniyle imkânsız), `npm run build` tam paketleme, Electron davranış testi.
+**Çalıştırılmayan kontroller:** gerçek ses akışıyla uçtan uca test (mikrofon/sistem sesi), gerçek OpenAI/DeepL çağrıları (C-01 testi sahte anahtarla yapıldı — DeepL'e yalnız reddedilen tek istek gitti), diarization'ın çalışan bir ortamda gözlemi (bu ortamda B-01 nedeniyle imkânsız), `npm run build` tam paketleme, Electron davranış testi, C-03/C-04/C-05'in runtime üretimi (statik kanıtla raporlandı).
 
 ---
 
@@ -229,11 +279,13 @@ Ayrıca **tasarım gereği 1 bilinen sınırlama** (telaffuz sözlüğü tam-eş
 1. **B-01 + B-02** — Konuşmacı tanıma bu kurulumda tamamen ölü; düzeltme küçük (`getattr(diarization,'speaker_diarization',diarization)`) ama etkisi büyük. torchcodec'i de aynı işte hallet.
 2. **A-01** — Durdur'da son konuşmanın kaybı (veri kaybı).
 3. **A-02** — Yol eşleşmesi; etkilenen kullanıcı uygulamayı açamaz.
-4. **B-03 + B-04 + G-11** — Çeviri anahtarı yaşam döngüsü: yanlış "aktif" mesajı + sessiz anahtar silinmesi + tek-anahtar beklentisi.
-5. **A-04, A-03** — sessiz CPU düşüşü ve çift çeviri maliyeti.
-6. **B-05 + G-10** — PTT sessiz düşüş → backend'e hata emit'i (tek satır deseni) + watchdog.
-7. **B-06** — mic-dikte kirlenmesi; dil kilidi kalitesi.
-8. **A-05, B-07..B-09** — küçük tutarlılık/sağlamlık düzeltmeleri.
+4. **C-01** — Başarısız DeepL testinin runtime'ı bozması: test→commit sırasını değiştirmek küçük bir route düzeltmesi; canlı çeviriyi sessizce öldürüyor.
+5. **B-03 + B-04 + G-11** — Çeviri anahtarı yaşam döngüsü: yanlış "aktif" mesajı + sessiz anahtar silinmesi + tek-anahtar beklentisi.
+6. **A-04, A-03** — sessiz CPU düşüşü ve çift çeviri maliyeti.
+7. **B-05 + G-10, C-04 + G-16** — PTT yaşam döngüsü: sessiz düşüş + sıralama/keepalive tutarlılığı.
+8. **C-03** — mic modunda dil zorlama (tek satır); kullanıcı deneyimini doğrudan etkiler.
+9. **C-02 + G-15** — socket auth (derinlemesine savunma; yerel tehdit modelinde düşük-orta).
+10. **B-06, C-05, C-06, B-07..B-09, A-05** — küçük tutarlılık/sağlamlık düzeltmeleri.
 
 ---
 

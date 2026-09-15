@@ -1,8 +1,8 @@
 # Devir notları
 
-Güncel devir notu: [2026-09-15 07:48 — ikinci derin denetim turu ve rapor güncellemesi](docs/devir/2026-09-15-0748.md).
+Güncel devir notu: [2026-09-15 11:07 — üçüncü derin denetim turu (C-serisi bulgular)](docs/devir/2026-09-15-1107.md).
 
-Önceki devir notu: [2026-09-15 10:21 — genel kod denetimi ve konsolide bug raporu](docs/devir/2026-09-15-1021.md).
+Önceki devir notu: [2026-09-15 07:48 — ikinci derin denetim turu ve rapor güncellemesi](docs/devir/2026-09-15-0748.md).
 
 Güncel eşitleme notu: [2026-09-15 04:30 — yerel/GitHub doğrulaması](docs/devir/2026-09-15-0430.md). Önceki kayıtlar aşağıda korunmuştur.
 
@@ -13,6 +13,8 @@ Güncel devir notu: [2026-09-14 14:50 — Oyun modu ve dengeli ses profili](docs
 ## Arşiv
 
 - [2026-09-15 10:21 — genel kod denetimi ve konsolide bug raporu](docs/devir/2026-09-15-1021.md)
+
+- [2026-09-15 07:48 — ikinci derin denetim turu ve rapor güncellemesi](docs/devir/2026-09-15-0748.md)
 
 - [2026-09-15 04:54 — konuşma listesinin dikey alanı](docs/devir/2026-09-15-0454.md)
 
