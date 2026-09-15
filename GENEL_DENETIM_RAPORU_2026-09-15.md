@@ -1,5 +1,5 @@
 # WHISPER PRO — GENEL KOD DENETİMİ, BUG ve GELİŞTİRME RAPORU
-**Tarih:** 15 Eylül 2026 (üçüncü derin tur ile genişletildi)
+**Tarih:** 15 Eylül 2026 (dördüncü tur — hedefli fuzz/stres testleriyle genişletildi)
 **Kapsam:** Tüm uygulama (`buyedektir.py`, `audio_diagnostics.py`, `templates/index.html`, `templates/overlay.html`, `static/*.js`, `main.js`, `main_helpers.js`, `preload.js`, `transkribe.py`, `build.js`, `launcher_whisper.py`, `başlat.bat`, `requirements.txt`, `.venv` kurulu paket sürümleri)
 **Durum:** Kodda değişiklik yapılmadı — yalnızca denetim ve raporlama.
 **Önceki raporlar:** `BUG_TARAMASI_TAM_RAPOR.md` (15 kritik + 27 yüksek + 35 orta) ve `DERIN_BUG_TARAMASI_RAPORU.md` (30 madde) bu rapora konsolide edildi; her madde güncel koda karşı tek tek doğrulandı.
@@ -14,7 +14,9 @@
 
 Üçüncü turda kalan statik JS modülleri (`cockpit.js`, `live-flow.js`, `reading-mode.js`, `runtime-safety.js`, `html-utils.js`, `quick-phrases.js`), `audio_diagnostics.py`, Socket.IO bağlantı/auth sınırı, ayar-kalıcılık yarışları, `main.js`'in tamamı, mic executor yaşam döngüsü, `transkribe.py`, `build.js`, `launcher_whisper.py`, overlay hydration/socket yarışları ve çeviri worker'ının tamamı incelendi; **6 yeni bulgu** çıktı (C-01..C-06) — ikisi **canlı Flask test client ile doğrudan üretilerek kanıtlandı**.
 
-**Hâlâ açık doğrulanmış bulgular — 20 adet:**
+Dördüncü turda yöntem değiştirildi: saf fonksiyonlar (`_detect_script_lang`, `_is_likely_hallucination`, `_salvage_answer_options`, `_normalize_turkish_pronunciation`, `_find_quiet_split_index`, `_resample_int16`) düşmanca girdilerle fuzz'landı, ayar endpoint'lerine (`/api/settings`, `/api/glossary`, `/api/whisper_language`, `/api/translation_settings`, `/api/partial_toggle`) 12 thread × 30 istekle eşzamanlı yük bindirildi, ve dosya I/O + kaynak yaşam döngüsü (`_mic_job_slots`, `MicRecorder.MAX_RECORDING_S`, `_transcript_file_lock`, `_pendingAiRequests`) satır satır izlendi. Ayar endpoint'leri eşzamanlı yükte 5xx üretmedi ve `_pendingAiRequests`/mic slotu sızıntısı yok — bunlar temiz sonuç olarak not edildi. **2 yeni bulgu** (D-01, D-02) canlı Python ortamında üretilerek kanıtlandı; **B-08 güncellendi** (kozmetik sanılan bulgunun aslında canlı bir istisna olduğu doğrulandı).
+
+**Hâlâ açık doğrulanmış bulgular — 22 adet:**
 
 | ID | Önem | Özet | Kaynak |
 |----|------|------|--------|
@@ -30,7 +32,9 @@
 | B-06 | 🟡 | `context_buffer` oturumlar arası temizlenmiyor + mic-dikte (TR) Whisper prompt'unu kirletiyor | Yeni |
 | A-05 | 🟡 | Ctrl-PTT `setPtt`'de `keepalive` eksik | DERIN BUG-06 (yarım) |
 | B-07 | � | `generate_ai_response` `transcript_id` int değilse bağlam kaydı kendini de içeriyor | Yeni |
-| B-08 | 🔵 | `target_lang` doğrulanmıyor (`None`/dize-dışı → prompt'ta "None") | Yeni |
+| D-01 | 🟠 | `_detect_script_lang` uzun Latin metinde TEK yabancı script karakteri geçerse dili yanlış tespit ediyor (canlı üretildi) | 4. tur |
+| B-08 | � | `target_lang` tip-dışıysa `generate_ai_response` istisna atıp generic hataya düşüyor (canlı üretildi; önem yükseltildi) | Yeni → 4. turda güncellendi |
+| D-02 | 🟡 | `/api/translation_settings` `targetLang`/`sourceLang`/`enabled` tipini hiç doğrulamıyor — kalıcı state'e keyfi tip yazılabiliyor (canlı üretildi) | 4. tur |
 | B-09 | � | Küçük sağlamlık boşlukları demeti (bool-coercion, PyAudio leak, durum tutarsızlığı, mojibake, ölü DEFAULTS anahtarları) | Yeni |
 | C-01 | 🟠 | `deepl_config` başarısız anahtar testi runtime provider+anahtarı bozuyor (canlı üretildi) | 3. tur |
 | C-02 | 🟠 | Socket.IO bağlantısında token yok — canlı transkript akışı tokensuz okunabilir (canlı üretildi) | 3. tur |
@@ -39,7 +43,7 @@
 | C-05 | 🔵 | Backend restart'ta `_transcriptRevisions` temizlenmiyor → eski id'li düzeltmeler düşebilir | 3. tur |
 | C-06 | 🔵 | `transkribe.py` `torch.cuda.is_available()` kullanıyor — ana uygulamadaki düzeltme burada yok | 3. tur |
 
-Ayrıca **tasarım gereği 1 bilinen sınırlama** (telaffuz sözlüğü tam-eşleşme) ve **16 geliştirme önerisi** (§4) var.
+Ayrıca **tasarım gereği 1 bilinen sınırlama** (telaffuz sözlüğü tam-eşleşme) ve **17 geliştirme önerisi** (§4) var.
 
 ---
 
@@ -164,6 +168,38 @@ Ayrıca **tasarım gereği 1 bilinen sınırlama** (telaffuz sözlüğü tam-eş
 * **Mekanizma:** `is_available()` True döndürebilir ama `WhisperModel(device='cuda')` yüklemesi (transkribe.py:408) sürücü/cuBLAS uyumsuzluğunda patlar → iş hata ile biter, CPU fallback YOK (ana uygulamada var). Kullanıcı CPU'yu elle seçene kadar transkribe çalışmaz.
 * **Öneri:** `detect_device`'ı ana uygulamayla aynı gerçek-tensor testine al veya model yükleme hatasında `device='cpu'` ile tek otomatik deneme yap.
 
+### [D-01] `_detect_script_lang` tek yabancı karakterle uzun Latin metnin dilini yanlış tespit ediyor 🟠
+* **Konum:** `buyedektir.py:2902-2958`; çağıranlar `buyedektir.py:4191` (`model_language` alanı) ve `buyedektir.py:5577` (auto-modda `style_lang` — telaffuz rehberi seçimi).
+* **Mekanizma:** Fonksiyon `total = sum(counts.values())` hesaplarken **yalnızca Latin-dışı script aralıklarındaki karakterleri sayıyor**; metnin toplam uzunluğu veya Latin harf sayısı hiç dikkate alınmıyor (`if total < 1: return None` — yani 0 yabancı karakter varsa vazgeç, 1 tane bile varsa devam et). Sonuç: 800 Latin harfli bir cümlenin sonuna tek bir Kiril/Yunan/Arapça-rakam karakteri eklenince `dominant` o tek karakterin script'i olur ve `counts[dominant] < total*0.5` testi `1 < 1*0.5` (yanlış) olduğundan geçer — script "baskın" sayılır.
+* **Canlı kanıt (bu oturumda, gerçek `.venv` ile üretildi):**
+  - `"I really like the brand Яndex a lot honestly and use it daily"` (64 harf, 1 Kiril `Я`) → `'ru'` (beklenen: `None`)
+  - `"The delta value ΔT is about five degrees celsius today"` (1 Yunan `Δ`) → `'el'`
+  - 171 Latin harfli cümle + tek `'в'`/`'あ'`/`'中'`/`'한'`/`'א'`/`'ا'` eklenince sırasıyla `ru`/`ja`/`zh`/`ko`/`he`/`ar` — Latin harf sayısı **800'e çıkarıldığında bile** aynı sonuç.
+  - Yalnız Arapça-Hint rakamları (`"Total is ٥٦٧ units here"`, harf yok, sadece rakam) → `'ar'`.
+* **Etki:** İki gerçek fonksiyonel yol etkileniyor:
+  1. `model_language` (4191) → Alt-PTT'nin `target_lang='auto'` seçiminde kullanılan `_LANG_INITIAL_PROMPTS` süzgecinden geçer (4855-4859): karşı taraf İngilizce konuşurken markası/adı içinde tek bir Kiril harfi geçerse (ör. yabancı bir marka adı, emoji-benzeri stilize harf, kopyala-yapıştır kirliliği), Alt-PTT auto-hedef dili sessizce Rusça'ya kilitlenir — kullanıcı Japonca cevap beklerken Rusça telaffuz alır.
+  2. `style_lang` (5577) → auto modda AI cevap önerisinin **telaffuz rehberi ve stil kuralları** yanlış dile göre seçilir; kullanıcıya yanlış dilin tire/imla kurallarıyla üretilmiş bir okunuş sunulur.
+  - Whisper'in gerçek `info.language` alanı (4191'de `or info.language` ile fallback) bu durumda GÖRMEZDEN gelinir çünkü `_detect_script_lang` `None` değil geçerli bir kod döndürüyor.
+* **Öneri:** Eşiği "yabancı script sayısı / **toplam metin uzunluğu**" olarak hesapla (`total = len(text)` veya en az `len([c for c in text if c.isalpha()])`), ve `total < 1` yerine anlamlı bir minimum (ör. yabancı karakter oranı ≥ %30 VEYA mutlak sayı ≥ 3) uygula. Tek rakam/tek harf gürültüsünü baskın script sayma.
+* **Test önerisi:** `test_smoke.py`'a bu fonksiyon için "N Latin harf + 1 yabancı karakter → None" ve "gerçek yabancı dil metni → doğru kod" vakalarını ekleyen bir regresyon testi eklenmeli (bkz. yukarıdaki canlı kanıt vakaları).
+
+### [D-02] `/api/translation_settings` `targetLang`/`sourceLang`/`enabled` tipini hiç doğrulamıyor 🟡
+* **Konum:** `buyedektir.py:4724-4749`; karşılaştırma için `buyedektir.py:5138-5149` (`/api/whisper_language` — `isinstance(lang, str)` + `allowed` küme kontrolü yapıyor).
+* **Mekanizma:** `translation_settings()` route'u `data.get('targetLang', 'EN')` ve `data.get('sourceLang', 'TR')` değerlerini **hiçbir tip veya değer kontrolünden geçirmeden** doğrudan `transcriber.translator.target_lang`/`source_lang` özniteliklerine yazıyor. `/api/whisper_language`'ın yaptığı `isinstance(..., str)` + izin-listesi deseni burada yok.
+* **Canlı kanıt (bu oturumda üretildi):** `POST /api/translation_settings {targetLang: ['JA']}` → `http 200, success:true`, `transcriber.translator.target_lang` gerçekten Python `list` nesnesi `['JA']` oldu (string değil). Aynı şekilde `dict`, `bool`, `int`, `None`, boş dize, 30+ karakter çöp dize hepsi olduğu gibi kabul edildi.
+* **Etki zinciri doğrulandı:**
+  1. `DeepLTranslator.translate()` (satır 1910) `str(snapshot["target_lang"]).strip().upper()` ile bu değeri **stringe zorluyor** — çökme yok, ama sonuç `"['JA']"` gibi anlamsız bir dize olup DeepL'e `target_lang="['JA']"` olarak gönderiliyor (DeepL bunu reddedecek → sessiz çeviri hatası, mevcut B-03/C-01 sessiz-hata ailesiyle aynı sınıf).
+  2. OpenAI çeviri yolunda (`_translate_with_openai`, satır 1962) aynı stringleşmiş çöp değer `lang_names.get(target_lang, target_lang)` ile bulunamayınca **olduğu gibi** prompt'a "X diline çevir" talimatının içine literal metin olarak giriyor (ör. `"['JA'] diline çevir"`) — model çıktısı öngörülemez hale gelir.
+  3. `/api/generate_ai_response`'a (ayrı, per-request `target_lang` alanı) doğrudan liste/dict gönderilirse **hiç stringe çevrilmeden** `lang_names.get(target_lang, target_lang)` (satır 5541) çağrılır → `TypeError: unhashable type` — bkz. B-08 güncellemesi altında.
+* **Öneri:** `/api/whisper_language`'daki deseni uygula: `isinstance(value, str)` kontrolü + `_LANG_INITIAL_PROMPTS`/bilinen kod kümesiyle doğrulama; geçersizse mevcut değeri koru ve `400` dön (C-01'deki "test-önce-commit-sonra" ilkesiyle tutarlı).
+* **Test önerisi:** Flask test client ile `targetLang`/`sourceLang` alanına `list`/`dict`/`int`/`None` gönderip `translator.target_lang`'ın tipinin değişmediğini doğrulayan bir regresyon testi.
+
+### [B-08 güncelleme] `target_lang` doğrulanmıyor — canlı istisna doğrulandı, önem 🔵→🟡
+* **Konum:** `buyedektir.py:5483` (`data.get('target_lang','ja')`), çökme noktası `5541` (`lang_names.get(target_lang, target_lang)`), yutan blok `6035-6040` (`except Exception as e: ... return jsonify({'success': False, 'error': 'AI servisi yanıt vermedi...'})`)
+* **Canlı kanıt (bu oturumda üretildi):** `POST /api/generate_ai_response {text:'merhaba', mode:'answer', target_lang:['ja']}` → sunucu konsoluna `TypeError: unhashable type: 'list'` traceback'i düşüyor, ama HTTP yanıtı `200 {'success': False, 'error': 'AI servisi yanıt vermedi. Lütfen tekrar deneyin.'}` — kullanıcıya gösterilen mesaj gerçek nedenle (tip hatası, sunucu hatası değil ağ/AI hatası) hiç ilgili değil.
+* **Not:** İlk tespitte "None/dize-dışı → prompt'ta 'None' basılır" (kozmetik) deniyordu; bu doğru ama eksikti — `list`/`dict` gibi hash'lenemeyen tipler kozmetik değil, **tam bir istisna** üretiyor ve geniş `except Exception` bloğu tarafından yanıltıcı bir mesajla yutuluyor. Önem bu nedenle 🔵'dan 🟡'a yükseltildi.
+* **Öneri:** (değişmedi + ekle) `isinstance(target_lang, str)` kontrolü; ayrıca `except Exception` bloğunda en azından log seviyesinde ayrım (validation vs. gerçek AI/ağ hatası) yapılırsa teşhis kolaylaşır.
+
 ### Not — ilk tur düzeltmeleri
 * **A-06 gerçekte DÜZELTİLMİŞ:** `process_mic_audio`'daki `conversation_turns.append` `with transcriber._lifecycle_lock:` bloğunun içinde (`buyedektir.py:5097-5120`). İlk turdaki "kilit dışında" bulgusu iptal edildi → DERIN BUG-24 ve B-BE-001/016 artık ✅.
 * **A-07 gerçekte DÜZELTİLMİŞ:** CSP `<meta>` yok ama daha güçlüsü var — `set_browser_security_headers` (`buyedektir.py:104-116`) her yanıta `Content-Security-Policy` başlığı ekliyor (`default-src 'self'`, `object-src 'none'`, `frame-ancestors 'none'`). → TAM B-CFG-001 ✅.
@@ -198,6 +234,7 @@ Ayrıca **tasarım gereği 1 bilinen sınırlama** (telaffuz sözlüğü tam-eş
 | G-14 | **Diarization/çeviri başarısızlığını UI'a taşı** — `speaker_identified` hiç gelmiyorsa veya `diarization_failed` sağlık kodu varsa durum çubuğunda uyarı | B-01/B-02 gibi sessiz ölüm vakalarını görünür kılar |
 | G-15 | **Socket auth** — `io({auth:{token}})` + `connect` handler | C-02'yi kapatır; frontend'e tek satır |
 | G-16 | **PTT istek kimliği/sequence'i** — backend'de eski sequence'i reddet | C-04'ün kök çözümü (sıralama bağımsız) |
+| G-17 | **`_detect_script_lang` eşiğini orana/mutlak sayıya bağla** — tek karakter gürültüsünü baskın script sayma | D-01'in kök çözümü; `model_language` ve auto-mod stil seçimini birden düzeltir |
 
 ---
 
@@ -269,8 +306,15 @@ Ayrıca **tasarım gereği 1 bilinen sınırlama** (telaffuz sözlüğü tam-eş
 | **3. tur:** `POST /api/deepl_config` geçersiz anahtarla (Flask test client) | 🔴 **C-01 üretildi:** `success:false` döner ama `provider='deepl'` + geçersiz `api_key` runtime'a yazılır, `enabled` açık kalır |
 | **3. tur:** `socketio.test_client(app)` tokensuz | 🔴 **C-02 üretildi:** `is_connected() == True` — handshake'de token yok |
 | **3. tur:** `py_compile` + `pyflakes` + `test_smoke.py` (tekrar) | ✅ hepsi geçti |
+| **4. tur:** `_detect_script_lang` fuzz (7 vaka + 5 esik vakasi, gercek `.venv`) | 🟠 **D-01 üretildi:** 800 Latin harf + 1 Kiril/Yunan/rakam karakteri dominant script sayılıyor |
+| **4. tur:** `_is_likely_hallucination`, `_salvage_answer_options`, `_parse_answer_options`, `_normalize_turkish_pronunciation`, `_find_quiet_split_index`, `_resample_int16` fuzz (~45 dusmanca vaka) | ✅ istisna/aralik-disi sonuc YOK — hepsi temiz |
+| **4. tur:** ayar endpoint'lerine 12 thread × 30 istek eşzamanlı yük (`/api/settings`, `/api/glossary`, `/api/whisper_language`, `/api/translation_settings`, `/api/partial_toggle`) | ✅ 5xx/istisna YOK; yük sonrası `translator`/`whisper_language`/`glossary`/`partial_enabled` durumu tutarlı |
+| **4. tur:** `POST /api/translation_settings {targetLang: liste/dict/bool/int/None}` (Flask test client) | 🟡 **D-02 üretildi:** hepsi doğrulamasız kabul edilip `translator.target_lang`'a olduğu gibi yazıldı |
+| **4. tur:** `POST /api/generate_ai_response {target_lang: ['ja']}` (Flask test client) | 🟡 **B-08 güncellemesi üretildi:** sunucu `TypeError: unhashable type` istisnası atıyor, `except Exception` bunu yutup "AI servisi yanıt vermedi" dönüyor |
+| **4. tur:** `_mic_job_slots`/`MicRecorder.MAX_RECORDING_S`/`_pendingAiRequests`/`_transcript_file_lock` kod incelemesi | ✅ sızıntı/kalıcı kilitlenme yok — `MAX_RECORDING_S=120` guard'ı garanti ediyor, `finally` blokları temizliyor |
+| **4. tur:** `py_compile` + `pyflakes` + `test_smoke.py` (tekrar, fuzz betikleri silindikten sonra) | ✅ hepsi geçti |
 
-**Çalıştırılmayan kontroller:** gerçek ses akışıyla uçtan uca test (mikrofon/sistem sesi), gerçek OpenAI/DeepL çağrıları (C-01 testi sahte anahtarla yapıldı — DeepL'e yalnız reddedilen tek istek gitti), diarization'ın çalışan bir ortamda gözlemi (bu ortamda B-01 nedeniyle imkânsız), `npm run build` tam paketleme, Electron davranış testi, C-03/C-04/C-05'in runtime üretimi (statik kanıtla raporlandı).
+**Çalıştırılmayan kontroller:** gerçek ses akışıyla uçtan uca test (mikrofon/sistem sesi), gerçek OpenAI/DeepL çağrıları (C-01 testi sahte anahtarla yapıldı — DeepL'e yalnız reddedilen tek istek gitti), diarization'ın çalışan bir ortamda gözlemi (bu ortamda B-01 nedeniyle imkânsız), `npm run build` tam paketleme, Electron davranış testi, C-03/C-04/C-05'in runtime üretimi (statik kanıtla raporlandı), D-01'in gerçek Whisper transkripti üzerinden uçtan uca gözlemi (yalnız fonksiyon-seviyesi üretildi).
 
 ---
 
@@ -278,14 +322,17 @@ Ayrıca **tasarım gereği 1 bilinen sınırlama** (telaffuz sözlüğü tam-eş
 
 1. **B-01 + B-02** — Konuşmacı tanıma bu kurulumda tamamen ölü; düzeltme küçük (`getattr(diarization,'speaker_diarization',diarization)`) ama etkisi büyük. torchcodec'i de aynı işte hallet.
 2. **A-01** — Durdur'da son konuşmanın kaybı (veri kaybı).
-3. **A-02** — Yol eşleşmesi; etkilenen kullanıcı uygulamayı açamaz.
-4. **C-01** — Başarısız DeepL testinin runtime'ı bozması: test→commit sırasını değiştirmek küçük bir route düzeltmesi; canlı çeviriyi sessizce öldürüyor.
-5. **B-03 + B-04 + G-11** — Çeviri anahtarı yaşam döngüsü: yanlış "aktif" mesajı + sessiz anahtar silinmesi + tek-anahtar beklentisi.
-6. **A-04, A-03** — sessiz CPU düşüşü ve çift çeviri maliyeti.
-7. **B-05 + G-10, C-04 + G-16** — PTT yaşam döngüsü: sessiz düşüş + sıralama/keepalive tutarlılığı.
-8. **C-03** — mic modunda dil zorlama (tek satır); kullanıcı deneyimini doğrudan etkiler.
-9. **C-02 + G-15** — socket auth (derinlemesine savunma; yerel tehdit modelinde düşük-orta).
-10. **B-06, C-05, C-06, B-07..B-09, A-05** — küçük tutarlılık/sağlamlık düzeltmeleri.
+3. **D-01 + G-17** — `_detect_script_lang` eşiği: tek yabancı karakter Alt-PTT auto-hedef dilini ve auto-mod telaffuz stilini yanlış dile kilitleyebiliyor; düzeltme küçük (oran/mutlak-sayı eşiği), etkisi iki fonksiyonel yolu birden düzeltir.
+4. **A-02** — Yol eşleşmesi; etkilenen kullanıcı uygulamayı açamaz.
+5. **C-01** — Başarısız DeepL testinin runtime'ı bozması: test→commit sırasını değiştirmek küçük bir route düzeltmesi; canlı çeviriyi sessizce öldürüyor.
+6. **B-03 + B-04 + G-11** — Çeviri anahtarı yaşam döngüsü: yanlış "aktif" mesajı + sessiz anahtar silinmesi + tek-anahtar beklentisi.
+7. **D-02** — `/api/translation_settings` tip doğrulaması: `/api/whisper_language`'daki deseni kopyala; C-01 ile aynı route ailesinde tutarlılık sağlar.
+8. **A-04, A-03** — sessiz CPU düşüşü ve çift çeviri maliyeti.
+9. **B-05 + G-10, C-04 + G-16** — PTT yaşam döngüsü: sessiz düşüş + sıralama/keepalive tutarlılığı.
+10. **C-03** — mic modunda dil zorlama (tek satır); kullanıcı deneyimini doğrudan etkiler.
+11. **B-08 (güncellendi)** — `generate_ai_response`'da tip-dışı `target_lang` istisnası; D-02 ile aynı doğrulama desenini paylaşır.
+12. **C-02 + G-15** — socket auth (derinlemesine savunma; yerel tehdit modelinde düşük-orta).
+13. **B-06, C-05, C-06, B-07, B-09, A-05** — küçük tutarlılık/sağlamlık düzeltmeleri.
 
 ---
 

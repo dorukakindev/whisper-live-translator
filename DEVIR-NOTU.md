@@ -1,8 +1,8 @@
 # Devir notları
 
-Güncel devir notu: [2026-09-15 11:07 — üçüncü derin denetim turu (C-serisi bulgular)](docs/devir/2026-09-15-1107.md).
+Güncel devir notu: [2026-09-15 11:25 — dördüncü tur (fuzz/stres testleriyle hedefli bug avı)](docs/devir/2026-09-15-1125.md).
 
-Önceki devir notu: [2026-09-15 07:48 — ikinci derin denetim turu ve rapor güncellemesi](docs/devir/2026-09-15-0748.md).
+Önceki devir notu: [2026-09-15 11:07 — üçüncü derin denetim turu (C-serisi bulgular)](docs/devir/2026-09-15-1107.md).
 
 Güncel eşitleme notu: [2026-09-15 04:30 — yerel/GitHub doğrulaması](docs/devir/2026-09-15-0430.md). Önceki kayıtlar aşağıda korunmuştur.
 
@@ -11,6 +11,8 @@ Yeni oturum ve format sonrası kurulum: [BASLANGIC.md](BASLANGIC.md)
 Güncel devir notu: [2026-09-14 14:50 — Oyun modu ve dengeli ses profili](docs/devir/2026-09-14-1450.md)
 
 ## Arşiv
+
+- [2026-09-15 11:07 — üçüncü derin denetim turu (C-serisi bulgular)](docs/devir/2026-09-15-1107.md)
 
 - [2026-09-15 10:21 — genel kod denetimi ve konsolide bug raporu](docs/devir/2026-09-15-1021.md)
 
