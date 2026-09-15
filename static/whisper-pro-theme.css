@@ -1902,7 +1902,12 @@ button:not(:disabled), summary { cursor: pointer; }
 }
 .card { box-shadow: none; }
 .transcription-area, .reply-cockpit { position: relative; top: auto; height: calc(100vh - 240px); min-height: 510px; border-radius: 14px; }
-.transcription-area { grid-area: transcript; }
+.transcription-area {
+    grid-area: transcript;
+    height: calc(100vh - 150px);
+    height: calc(100dvh - 150px);
+    min-height: 680px;
+}
 .reply-cockpit { grid-area: reply; }
 .section-kicker { display: block; color: var(--wp-text-muted); font-size: 10px; font-weight: 600; letter-spacing: .1em; margin-bottom: 5px; }
 .transcription-controls { padding: 18px 20px; min-height: 82px; gap: 8px; }
@@ -1987,7 +1992,7 @@ body.light-mode .reply-choice[aria-pressed="true"] .reply-choice-number { color:
     .transcription-area, .reply-cockpit { height: auto; min-height: 0; }
     .transcription-area { order: 1; }
     .reply-cockpit { order: 2; }
-    .transcription-list { min-height: 180px; max-height: 42vh; }
+    .transcription-list { min-height: 320px; max-height: 60vh; }
     .reply-cockpit-options { overflow: visible; }
     .cockpit-status { width: calc(100% - 32px); grid-template-columns: repeat(3,minmax(0,1fr)); row-gap: 12px; }
     .session-toolbar { padding: 12px 16px; }

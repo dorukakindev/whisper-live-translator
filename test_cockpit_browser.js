@@ -190,19 +190,27 @@ app.whenReady().then(async () => {
         const layout = await win.webContents.executeJavaScript(`(() => {
             const panel = document.querySelector('.transcription-area').getBoundingClientRect();
             const reply = document.querySelector('.reply-cockpit').getBoundingClientRect();
+            const transcriptList = document.querySelector('.transcription-list').getBoundingClientRect();
             const filters = document.querySelector('.transcript-history-filters');
             return {width: innerWidth, right: Math.max(panel.right, reply.right),
                 stacked: reply.top >= panel.bottom,
                 replyBeforeTranscript: reply.right <= panel.left,
                 transcriptWider: panel.width >= reply.width * 1.45,
+                panelHeight: panel.height,
+                replyHeight: reply.height,
+                transcriptListHeight: transcriptList.height,
                 filtersFit: filters.scrollWidth <= filters.clientWidth};
         })()`);
         assert(layout.right <= layout.width, width + 'px kapalı ayarlarda taşma');
         assert(layout.filtersFit, width + 'px arama filtrelerinde taşma');
+        assert(layout.transcriptListHeight >= 300,
+            width + 'px konusma listesi uzun metinler icin en az 300px olmali');
         if (layout.width <= 980) assert(layout.stacked, width + 'px tek sütun düzeni');
         if (layout.width > 980) {
             assert(layout.replyBeforeTranscript, width + 'px cevap alani solda olmali');
             assert(layout.transcriptWider, width + 'px konusma alani cevap alanindan belirgin genis olmali');
+            assert(layout.panelHeight >= layout.replyHeight + 75,
+                width + 'px konusma alani cevap alanindan asagi dogru daha uzun olmali');
         }
         await win.webContents.executeJavaScript(`window.scrollTo(0, 0)`);
         await new Promise(resolve => setTimeout(resolve, 250));
