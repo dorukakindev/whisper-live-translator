@@ -1,5 +1,7 @@
-# Gizli bilgiler — ASLA commit'lenmesin
+# Gizli bilgiler - ASLA commit'lenmesin
 .env
+.env.*
+!.env.example
 token*.txt
 OPENAI.txt
 api.txt
@@ -31,6 +33,10 @@ dist/
 node_modules/
 artifacts/
 whisper_models/
+
+# Local audit and temporary outputs
+_quick_phrases.json
+*.tmp
 
 # Kazara olusmus 0-byte dosyalar (bir shell komutunun yanlis yorumlanmasi
 # olmali - "npm run" gibi bir komutun kabuk tarafindan dosya adi sanilmasi)

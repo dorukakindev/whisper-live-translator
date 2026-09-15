@@ -1,16 +1,17 @@
 {
     "name": "whisper-pro",
     "version": "1.0.0",
-    "description": "Whisper + DeepL + Speaker Diarization Desktop App",
+    "description": "Live multilingual conversation assistant with local Whisper transcription",
     "type": "commonjs",
     "main": "main.js",
-    "author": "Antigravity",
+    "author": "dorukakindev",
     "license": "MIT",
     "scripts": {
         "start": "electron .",
         "dev": "set \"DEBUG=*\" && electron .",
         "build": "node build.js",
-        "scan": "node build.js --scan-source"
+        "scan": "node build.js --scan-source",
+        "audit:history": "node scripts/audit-git-history.js"
     },
     "dependencies": {
         "electron-store": "^8.2.0"

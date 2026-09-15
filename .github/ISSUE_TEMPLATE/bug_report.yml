@@ -1,0 +1,66 @@
+name: Bug report
+description: Report a reproducible problem using redacted or synthetic data
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include API keys, tokens, private audio, transcripts, speaker profiles, or unredacted logs.
+  - type: input
+    id: commit
+    attributes:
+      label: Commit or version
+      placeholder: Full Git commit ID or packaged version
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Problem
+      description: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Use synthetic or anonymized input.
+      placeholder: |
+        1. Start...
+        2. Select...
+        3. Observe...
+    validations:
+      required: true
+  - type: dropdown
+    id: evidence
+    attributes:
+      label: Validation level
+      options:
+        - Real audio and hardware
+        - Real provider call with redacted output
+        - Local automated test or simulation
+        - Source inspection only
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Windows, Python, CPU/GPU, and relevant audio device information. Remove personal names and paths.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted error output
+      description: Remove secrets and private conversation content. Do not attach .env.
+      render: shell
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I removed credentials, personal data, private audio, and private transcript content.
+          required: true
