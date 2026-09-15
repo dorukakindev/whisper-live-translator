@@ -6,17 +6,18 @@ REM Bu dosyayı dist/Whisper-Pro-win32-x64 klasörüne taşıdığında da çal�
 setlocal enabledelayedexpansion
 
 REM Şu anki dosyanın bulunduğu dizini bul
-set CURRENT_DIR=%~dp0
+set "CURRENT_DIR=%~dp0"
+set "PROJECT_DIR=%~dp0.."
 
 REM dist klasöründe mi, yoksa app klasöründe mi çalıştırılıyor kontrolü
 if exist "%CURRENT_DIR%Whisper-Pro.exe" (
     REM dist\Whisper-Pro-win32-x64 içinde
     echo Whisper Pro başlatılıyor...
     start "" "%CURRENT_DIR%Whisper-Pro.exe"
-) else if exist "%CURRENT_DIR%dist\Whisper-Pro-win32-x64\Whisper-Pro.exe" (
+) else if exist "%PROJECT_DIR%\dist\Whisper-Pro-win32-x64\Whisper-Pro.exe" (
     REM Proje root'unda
     echo Whisper Pro başlatılıyor...
-    start "" "%CURRENT_DIR%dist\Whisper-Pro-win32-x64\Whisper-Pro.exe"
+    start "" "%PROJECT_DIR%\dist\Whisper-Pro-win32-x64\Whisper-Pro.exe"
 ) else (
     echo HATA: Whisper-Pro.exe bulunamadı!
     echo.

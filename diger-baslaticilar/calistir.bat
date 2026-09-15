@@ -1,5 +1,5 @@
 @echo off
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 REM Proje-ici sanal ortami (.venv, Python 3.11) tercih et: tum bagimliliklar
 REM (webrtcvad, faster-whisper, torch...) ORADA kurulu. PATH'teki "python"

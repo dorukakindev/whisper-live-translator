@@ -19,7 +19,8 @@ The codebase and all code comments are in **Turkish**. Match that when editing; 
 ## Running & building
 
 - **Dev (full app):** `npm start` — Electron (`main.js`) spawns the Flask backend (`buyedektir.py`) on port 5000 and loads the UI. `başlat.bat` is a double-click wrapper for this.
-- **Backend only (no Electron):** `python buyedektir.py` (or `calistir.bat`) → serves http://localhost:5000. Override with `HOST` / `PORT` env vars (defaults `127.0.0.1:5000`, local-only). This is the fastest way to iterate on backend/frontend.
+- Kullanıcının normal başlatıcısı proje kökündeki `başlat.bat` dosyasıdır. Diğer BAT araçları `diger-baslaticilar/` altında tutulur; köke ek alternatif başlatıcı koyma.
+- **Backend only (no Electron):** `python buyedektir.py` (or `diger-baslaticilar\calistir.bat`) → serves http://localhost:5000. Override with `HOST` / `PORT` env vars (defaults `127.0.0.1:5000`, local-only). This is the fastest way to iterate on backend/frontend.
 - **Build portable exe:** `npm run build` → `dist/Whisper-Pro-win32-x64/Whisper-Pro.exe`. The `dist/` tree is a full copy of the app — rebuild after backend/frontend changes; it does NOT auto-update.
 - `main.js` prefers a project-local venv (`.venv/`/`venv/`) python, then `python`/`python3`/`py` on PATH; it kills orphaned python holding port 5000 and restarts the backend on crash (capped).
 

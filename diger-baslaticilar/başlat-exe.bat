@@ -2,7 +2,7 @@
 REM Whisper Pro - Portable Executable Başlatıcı
 REM Bu dosya dist klasöründeki hazır .exe dosyasını çalıştırır
 
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 echo.
 echo ========================================
