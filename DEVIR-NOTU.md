@@ -1,5 +1,7 @@
 # Devir notları
 
+Güncel devir notu: [2026-09-15 03:03 — kökte tek güncel başlatıcı](docs/devir/2026-09-15-0303.md).
+
 Güncel eşitleme notu: [2026-09-15 04:30 — yerel/GitHub doğrulaması](docs/devir/2026-09-15-0430.md). Önceki kayıtlar aşağıda korunmuştur.
 
 Yeni oturum ve format sonrası kurulum: [BASLANGIC.md](BASLANGIC.md)
