@@ -193,11 +193,17 @@ app.whenReady().then(async () => {
             const filters = document.querySelector('.transcript-history-filters');
             return {width: innerWidth, right: Math.max(panel.right, reply.right),
                 stacked: reply.top >= panel.bottom,
+                replyBeforeTranscript: reply.right <= panel.left,
+                transcriptWider: panel.width >= reply.width * 1.45,
                 filtersFit: filters.scrollWidth <= filters.clientWidth};
         })()`);
         assert(layout.right <= layout.width, width + 'px kapalı ayarlarda taşma');
         assert(layout.filtersFit, width + 'px arama filtrelerinde taşma');
         if (layout.width <= 980) assert(layout.stacked, width + 'px tek sütun düzeni');
+        if (layout.width > 980) {
+            assert(layout.replyBeforeTranscript, width + 'px cevap alani solda olmali');
+            assert(layout.transcriptWider, width + 'px konusma alani cevap alanindan belirgin genis olmali');
+        }
         await win.webContents.executeJavaScript(`window.scrollTo(0, 0)`);
         await new Promise(resolve => setTimeout(resolve, 250));
         fs.writeFileSync(path.join(outputDir, `${width}x${height}-focused.png`),
