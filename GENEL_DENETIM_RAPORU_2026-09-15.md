@@ -1,6 +1,6 @@
 # WHISPER PRO — GENEL KOD DENETİMİ, BUG ve GELİŞTİRME RAPORU
-**Tarih:** 15 Eylül 2026
-**Kapsam:** Tüm uygulama (`buyedektir.py`, `templates/index.html`, `templates/overlay.html`, `static/*.js`, `main.js`, `main_helpers.js`, `preload.js`, `transkribe.py`, `build.js`, `launcher_whisper.py`, `başlat.bat`)
+**Tarih:** 15 Eylül 2026 (ikinci derin tur ile genişletildi)
+**Kapsam:** Tüm uygulama (`buyedektir.py`, `audio_diagnostics.py`, `templates/index.html`, `templates/overlay.html`, `static/*.js`, `main.js`, `main_helpers.js`, `preload.js`, `transkribe.py`, `build.js`, `launcher_whisper.py`, `başlat.bat`, `requirements.txt`, `.venv` kurulu paket sürümleri)
 **Durum:** Kodda değişiklik yapılmadı — yalnızca denetim ve raporlama.
 **Önceki raporlar:** `BUG_TARAMASI_TAM_RAPOR.md` (15 kritik + 27 yüksek + 35 orta) ve `DERIN_BUG_TARAMASI_RAPORU.md` (30 madde) bu rapora konsolide edildi; her madde güncel koda karşı tek tek doğrulandı.
 
@@ -8,74 +8,128 @@
 
 ## 1. YÖNETİCİ ÖZETİ
 
-Önceki iki rapordaki **30 + 70+ bulgunun büyük çoğunluğu güncel kodda düzeltilmiş** durumda. Özellikle veri kaybı sınıfındaki kritik hatalar (kısa cevapların halüsinasyon sayılması, Alt-PTT dil tersliği, HF token'ın sıfırlamayla silinmesi, Alt+Tab hayalet kayıtları, DSP çökmesi, PTT öğelerinde id eksikliği, sayaç enflasyonu) kapatılmış.
+Önceki iki rapordaki **30 + 70+ bulgunun büyük çoğunluğu güncel kodda düzeltilmiş** durumda. İkinci derin turda ilk rapordaki **A-06 ve A-07'nin de aslında düzeltilmiş olduğu** doğrulandı (bkz. §2 düzeltmeleri) — ilk turdaki kanıt satırları yanıltıcıydı.
 
-**Hâlâ açık olan doğrulanmış bulgular 7 adet** (1 yüksek, 3 orta, 3 düşük):
+İkinci turda backend'in tamamı, Electron ana süreci, overlay, bağımsız betikler ve **kurulu `.venv` paket sürümleri** de incelendi; **10 yeni bulgu** çıktı (B-01..B-10), en önemlisi: **konuşmacı tanıma (diarization) bu ortamda tamamen ölü** — pyannote.audio 4.x API kırılması + torchcodec eksikliği.
 
-| ID | Önem | Özet | Eski kayıt |
-|----|------|------|-----------|
-| A-01 | 🔴 Yüksek | "Durdur" anında işlemdeki son konuşma hâlâ çöpe atılıyor | DERIN BUG-18 |
-| A-02 | 🟠 Orta | `isOwnedWhisperBackend` tam yol eşleşmesi; 8.3 kısa yollarda uygulama açılmıyor | DERIN BUG-29 |
-| A-03 | 🟠 Orta | Backend çeviri + `autoTranslateEnabled` birlikte açıksa çift AI çevirisi | DERIN BUG-12 (kısmi) |
-| A-04 | 🟠 Orta | İlk GPU yüklemesinde OOM → sessiz CPU fallback | DERIN BUG-17 (kısmi) |
-| A-05 | 🟡 Düşük | Ctrl-PTT `setPtt` `keepalive` eksik; kapanışta mikrofon açık kalabilir | DERIN BUG-06 (yarım) |
-| A-06 | 🟡 Düşük | `conversation_turns.append` mic yolunda kilit dışında | DERIN BUG-24 (kısmi) |
-| A-07 | 🟡 Düşük | CSP meta etiketi yok | TAM B-CFG-001 |
+**Hâlâ açık doğrulanmış bulgular — 14 adet:**
 
-Ayrıca **tasarım gereği olan 1 bilinen sınırlama** (telaffuz sözlüğü yalnız tam-eşleşme, DERIN BUG-30) ve **9 geliştirme önerisi** bölüm 4'te listelendi.
+| ID | Önem | Özet | Kaynak |
+|----|------|------|--------|
+| B-01 | 🔴 | Konuşmacı tanıma pyannote 4.x'te sessizce ölü (`DiarizeOutput.itertracks` yok) | Yeni (derin tur) |
+| A-01 | 🔴 | "Durdur" anında işlemdeki son konuşma hâlâ çöpe atılıyor | DERIN BUG-18 |
+| A-02 | 🟠 | `isOwnedWhisperBackend` tam yol eşleşmesi (8.3 kısa yol + göreli yol varyantları) | DERIN BUG-29 |
+| B-02 | 🟠 | `.venv`'de torchcodec bozuk → diarization dosya-yolu fallback'i de ölü | Yeni (derin tur) |
+| A-03 | 🟠 | Backend çeviri + `autoTranslateEnabled` birlikte açıksa çift AI çevirisi | DERIN BUG-12 (kısmi) |
+| A-04 | 🟠 | İlk GPU yüklemesinde OOM → sessiz CPU fallback | DERIN BUG-17 (kısmi) |
+| B-03 | 🟡 | OpenAI çeviri sağlayıcısında anahtar yokken "aktif" mesajı + ana cevap anahtarına fallback yok | Yeni |
+| B-04 | 🟡 | `configure_translation(provider, None)` o sağlayıcının kayıtlı anahtarını siliyor | Yeni |
+| B-05 | 🟡 | Alt-PTT sonucu generation-uyuşmazlığında sessizce düşüyor → UI "işleniyor"da takılı | Yeni |
+| B-06 | 🟡 | `context_buffer` oturumlar arası temizlenmiyor + mic-dikte (TR) Whisper prompt'unu kirletiyor | Yeni |
+| A-05 | 🟡 | Ctrl-PTT `setPtt`'de `keepalive` eksik | DERIN BUG-06 (yarım) |
+| B-07 | � | `generate_ai_response` `transcript_id` int değilse bağlam kaydı kendini de içeriyor | Yeni |
+| B-08 | 🔵 | `target_lang` doğrulanmıyor (`None`/dize-dışı → prompt'ta "None") | Yeni |
+| B-09 | � | Küçük sağlamlık boşlukları demeti (bool-coercion, PyAudio leak, durum tutarsızlığı, mojibake, ölü DEFAULTS anahtarları) | Yeni |
+
+Ayrıca **tasarım gereği 1 bilinen sınırlama** (telaffuz sözlüğü tam-eşleşme) ve **14 geliştirme önerisi** (§4) var.
 
 ---
 
 ## 2. HALEN AÇIK BUGLAR (kanıtlı)
 
+### [B-01] Konuşmacı tanıma pyannote.audio 4.x'te sessizce ölü 🔴
+* **Konum:** `buyedektir.py:2199` (`diarization.itertracks(yield_label=True)`), `buyedektir.py:2059` (`Pipeline.from_pretrained("pyannote/speaker-diarization-3.1")`), `requirements.txt` (`pyannote.audio>=2.1.1` — üst sınır yok).
+* **Kanıt (bu ortamda doğrulandı):** `.venv`'de **pyannote.audio 4.0.4** kurulu. `SpeakerDiarization.__init__`'in `legacy` parametresi varsayılan `False`; `apply()` bu durumda `Annotation` değil `DiarizeOutput` döndürür ve `DiarizeOutput`'ta `itertracks` metodu **yok** (`hasattr` kontrolü: `False`; yalnız `serialize`, `speaker_embeddings` üyeleri).
+* **Mekanizma:** `diarization.itertracks(...)` → `AttributeError` → `identify_speaker`'ın genel `except`'i (2229) yutuyor, `_record_health_error('diarization_failed')` yazıp `(None, None)` dönüyor. Sonuç: diarization açıkken bile `speaker_identified` olayı **hiç yayınlanmaz**; `_diarize_busy_skips` artmaz çünkü iş "başarıyla" yürüyüp None döner.
+* **Etki:** Kullanıcı "Konuşmacı tanıma"yı açar, HF token girer, her şey normal görünür — ama hiçbir transkript hiçbir zaman konuşmacı etiketi almaz. Hata yalnız log'da `diarization_failed` olarak kalır; UI'da uyarı yok.
+* **Öneri:** Sonucu normalize et: `ann = getattr(diarization, 'speaker_diarization', diarization)` sonra `ann.itertracks(yield_label=True)` — hem 2.x/3.x (`Annotation`) hem 4.x (`DiarizeOutput`) çalışır. Alternatif: pipeline'ı `legacy=True` ile kur. Ayrıca `requirements.txt`'e üst sınır/uyum sürümü eklenmeli.
+
+### [B-02] `.venv`'de torchcodec bozuk → diarization dosya fallback'i de ölü 🟠
+* **Konum:** `buyedektir.py:2189-2190` (`torchaudio.save(tmp_path,...)` + `self.pipeline(tmp_path)`).
+* **Kanıt:** `.venv`'de `torch 2.10.0+cu130` kurulu; pyannote import'u "torchcodec is not installed correctly ... Could not load libtorchcodec ... libtorchcodec_core8.dll" uyarısı veriyor. pyannote 4.x dosya yolu/URI çözümlemesini torchcodec üzerinden yapar.
+* **Mekanizma:** Bellekteki `{"waveform": tensor}` yolu torchcodec GEREKTİRMEZ (uyarı metni de bunu söylüyor) → birincil yol çalışır. Fakat eski pyannote sürümleri tensor girdiyi kabul etmezse devreye giren dosya fallback'i bu ortamda decode aşamasında patlar → `except` (2229) → `(None, None)`.
+* **Etki:** B-01 düzeltilse bile, tensor-girdisi reddedilen bir sürüm/path kombinasyonunda fallback yine sessizce ölür. Ayrıca pyannote import'u her açılışta bu uzun traceback'i log'a basar (gürültü).
+* **Öneri:** `torchcodec`'i torch sürümüyle uyumlu kur (FFmpeg full-shared gerekir) veya fallback yolunu `torchaudio.load`→tensor yerine doğrudan `soundfile`/decode bağımsız yolla besle; en azından fallback'in çalışmadığını bir kere `logger.warning` ile belirt.
+
 ### [A-01] Durdur anında işlemdeki son konuşma hâlâ kayboluyor 🔴
-* **Konum:** `buyedektir.py:3501-3512` (`stop_capture`) ve `buyedektir.py:4140-4144` (`_transcribe_audio` commit kontrolü); frontend `templates/index.html:3874-3899` (`stopCapture`).
-* **Mekanizma:** `stop_capture` `is_running = False` ve `_result_generation += 1` yapar. Transcribe worker'ı kuyruktaki son sesi Whisper'dan geçirir, fakat commit kontrolü `result_generation != self._result_generation or not self.is_running → continue` ile sonucu düşürür. `/api/stop` öncesinde `/api/flush` çağrılmaz; frontend `stopCapture()` da flush yapmaz.
-* **Etki:** Kullanıcı "Durdur"a basmadan hemen önce söylenen son cümle (veya kuyruktaki son 1-2 segment) GPU'da transkribe edilip sessizce çöpe atılır — ne ekrana basılır ne dosyaya yazılır.
-* **Öneri:** Normal durdurma ile zorla sıfırlamayı ayır: `/api/stop` önce `flush_now` bayrağını kaldırıp kuyruğu boşaltmalı ve commit kontrolü `is_running` yerine yalnız oturum/generation değişimine bakmalı; ya da frontend `stopCapture()` önce `/api/flush` çağırmalı.
+* **Konum:** `buyedektir.py:3501-3512` (`stop_capture`: `is_running=False` + `_result_generation += 1`), `buyedektir.py:3534` (`_drain_audio_queue`), `buyedektir.py:4101-4105` ve `4132-4144` (commit kontrolü).
+* **Mekanizma:** Stop, generation'ı artırıp kuyruğu boşaltır. Whisper'dan yeni dönmüş bir sonuç veya kuyrukta bekleyen tam bir segment, `result_generation != self._result_generation or not self.is_running → continue` ile düşürülür — ne ekrana basılır ne dosyaya yazılır. Frontend `stopCapture()` önce `/api/flush` çağırmaz.
+* **Etki:** "Durdur"dan hemen önce söylenen son cümle (kuyrukta ~15 sn'ye kadar ses) sessizce kaybolur.
+* **Öneri:** `/api/stop`'a `drain=true` kipi: generation'ı artırmadan önce kuyruktaki işlenmiş/ işlenen sonucu commit'e izin verecek şekilde `is_running` kontrolünü commit yolundan ayır (oturum/generation değişimi tek geçersizleştirici kalsın); ya da frontend `stopCapture()` önce `/api/flush` çağırıp kısa beklesin.
 
-### [A-02] `isOwnedWhisperBackend` 8.3 kısa yollarda hâlâ başarısız 🟠
+### [A-02] `isOwnedWhisperBackend` yol eşleşmesi — 8.3 + göreli-yol varyantları 🟠
 * **Konum:** `main_helpers.js:9-14`.
-* **Mekanizma:** Eşleşme hâlâ `normalized.includes(expectedScript)` — `path.resolve(appDir, 'buyedektir.py')` uzun biçimiyle karşılaştırıyor. Windows WMI `CommandLine`'ı 8.3 kısa biçim (`d:\whispe~1\buyedektir.py`) döndürürse `includes` false verir.
-* **Etki:** Kullanıcı adında/dizin yolunda boşluk olan veya 8.3 etkin sistemlerde portu tutan kendi backend'i "sahipsiz" sayılır → `safeToStart=false` → "Port Kullanımda" diyaloğu + `app.quit()`. Sık rastlanmayan ama engelleyici başlatma hatası.
-* **Öneri:** Yol eşleşmesini gevşet: yalnızca `buyedektir.py` dosya adı + `--whisper-electron-child` bayrağı, ya da `fs.realpathSync`/kısa-yol çözümüyle iki tarafı da normalize et.
+* **Mekanizma:** `normalized.includes(expectedScript)` — `path.resolve(appDir,'buyedektir.py')`'nin uzun biçimi komut satırında birebir aranır. İki gerçekçi kaçış: (a) WMI `CommandLine` 8.3 kısa biçim döndürür (`d:\whispe~1\buyedektir.py`); (b) backend göreli yolla başlatılmışsa (`python buyedektir.py` — manuel başlatma veya başka bir başlatıcı), komut satırı tam yolu içermez.
+* **Etki:** Port 5000'i tutan süreç "sahipsiz/yabancı" sayılır → `safeToStart=false` → "Port Kullanımda" diyaloğu veya 60 sn hazırlık-timeout'u → uygulama açılmıyor. (b) tasarım gereği "yabancı sürece dokunma" politikasının da parçası ama kullanıcıya "kendi projenin backend'i" olarak görünür; UX hâlâ kırılgan.
+* **Öneri:** Eşleşmeyi `buyedektir.py` dosya adı + `--whisper-electron-child` işaretine indirge; ek güvence için `backend_nonce` yoksa `--whisper-electron-child` + script dosya adını birlikte şart koş (şu an ikisi de zaten aranıyor, yalnız tam-yol `includes` kırılgan). `fs.realpathSync`/`GetShortPathName` ile iki tarafı da normalize etmek alternatif.
 
-### [A-03] Çift çeviri hâlâ mümkün: backend çeviri + frontend otomatik AI çeviri 🟠
-* **Konum:** `templates/index.html:4307-4314` (autoTranslate → `getAIResponseById(id,'translate')` → `translate_dual`) ve `buyedektir.py:4234-4250` (`_translate_async` submit).
-* **Mekanizma:** Eski BUG-12'nin "koşulsuz çifte tetikleme" kısmı düzeltildi (bkz. `index.html:4289-4293` notu), fakat iki ayrı anahtar hâlâ bağımsız: sol panel çeviri sağlayıcısı (`/api/translation_settings` → `_translate_async`, DeepL/OpenAI) ve `autoTranslateEnabled` (yalnız localStorage → `translate_dual` AI çağrısı). İkisi birden açıksa aynı transkript için iki ayrı çeviri gider.
-* **Etki:** API maliyeti ikiye katlanır; aynı öğede backend `transcription_translation` kutusu + AI `ai-result` kutusu çakışabilir.
-* **Öneri:** `autoTranslateEnabled` açıkken backend `translation_settings.enabled` otomatik kapatılsın (veya tersi); UI'da ikisinin aynı anda açık olduğu uyarısı gösterilsin.
+### [A-03] Çift çeviri hâlâ mümkün 🟠
+* **Konum:** `templates/index.html:4307-4314` + `buyedektir.py:4234-4250`.
+* **Durum:** İlk turdaki gibi açık — iki bağımsız anahtar (backend `translation_settings.enabled` + localStorage `autoTranslateEnabled`) birlikte açıkken aynı transkripte iki ayrı çeviri gider.
+* **Öneri:** Birini açarken diğerini otomatik kapat veya UI'da çakışma uyarısı göster.
 
-### [A-04] İlk GPU model yüklemesinde OOM → sessiz CPU fallback 🟠
+### [A-04] İlk GPU yüklemesinde OOM → sessiz CPU fallback 🟠
 * **Konum:** `buyedektir.py:3188-3195`.
-* **Mekanizma:** Mevcut model varken OOM artık açık hata döndürüyor (mevcut model korunuyor — düzeldi). Fakat `self.current_model is None` iken (ilk yükleme / model boşaltılmışken) GPU OOM dahil herhangi bir hata `use_gpu = False` ile CPU int8'e düşer; kullanıcıya yalnız `device: 'CPU'` raporlanır, hata ayrıca belirtilmez.
-* **Etki:** VRAM'i sınırda olan kartlarda kullanıcı GPU seçtiğini sanırken CPU hızında çalışır; gecikme 10x artar. `load_model` yanıtı `device` döndürdüğü için UI'da ayırt edilebilir ama uyarı yok.
-* **Öneri:** `force_cpu=False` iken GPU denemesi OOM ile başarısız olursa yanıta `gpu_fallback: true, gpu_error: '...'` eklenip UI'da uyarı gösterilsin.
+* **Durum:** `current_model is None` iken GPU hatası `use_gpu=False` → CPU int8'e düşer; yanıt `device:'CPU'` döndürür ama GPU denemesinin neden başarısız olduğu bildirilmez. UI `device` alanını gösteriyorsa kısmen ayırt edilebilir.
+* **Öneri:** Yanıta `gpu_fallback:true` + `gpu_error` eklenip UI'da uyarı gösterilsin.
 
-### [A-05] Ctrl-PTT `setPtt` `keepalive` eksik — kapanışta PTT takılı kalabilir 🟡
-* **Konum:** `templates/index.html:5037-5043` (`setPtt`, keepalive yok) vs `5105` (`setAltPtt`, `keepalive: true` var). `beforeunload` `5087-5090`'da `setPtt(false)` çağrılıyor.
-* **Mekanizma:** Alt-PTT için BUG-06 düzeltildi (`keepalive: true`), ama sistem-sesi Ctrl-PTT'sinde aynı düzeltme uygulanmadı. Sayfa kapanışında/yenilemede `setPtt(false)` fetch'i tarayıcı tarafından iptal edilebilir.
-* **Etki:** Kullanıcı Ctrl'ye basılıyken pencereyi kapatırsa backend `ptt_active` `MAX_PTT_S` (120 sn) süresi dolana kadar açık kalır; o sürede mikrofon/sistem sesi boşa kaydedilir.
-* **Öneri:** `setPtt` fetch'ine `keepalive: true` ekle (tek satır, Alt-PTT ile aynı).
+### [B-03] OpenAI çeviri sağlayıcısında anahtarsız "aktif" + paylaşımlı anahtar fallback'i yok 🟡
+* **Konum:** `templates/index.html:3154-3160` (`toggleTranslation`), `buyedektir.py:1563` (`snapshot_translation_request` yalnız `translation_api_keys` okur), `buyedektir.py:4712` (`using_shared_key` sabit `false`).
+* **Mekanizma:** `deepl` için anahtar yoksa uyarı var; `openai_reseller`/`openai_official` için **anahtar kontrolü yapılmadan** "OpenAI çeviri aktif" gösteriliyor. Ayrıca çeviri çağrıları yalnız `translation_api_keys[provider]`'a bakar — kullanıcının ana cevap (`OpenAIResponder.api_key`) anahtarı çeviri için asla kullanılmaz. CLAUDE.md'deki "paylaşılan cevap anahtarına düşebilir" ifadesi güncel kodla örtüşmüyor.
+* **Etki:** Ana OpenAI anahtarını girmiş ama çeviri-özel anahtar girmemiş kullanıcı "Çeviri aktif" görür; her transkriptte çeviri `None` → `translation_status: 'failed'`. Sessiz, yanıltıcı hata durumu.
+* **Öneri:** Toggle'da openai sağlayıcıları için de anahtar kontrolü; veya `snapshot_translation_request` anahtar yoksa `self.api_key`'e düşsün (tek anahtarla her şeyi çalıştırmak beklenen UX).
 
-### [A-06] `conversation_turns.append` mic yolunda `_lifecycle_lock` dışında 🟡
-* **Konum:** `buyedektir.py:~5117` (`process_mic_audio` sonunda `transcriber.conversation_turns.append({role:'me', ...})`).
-* **Mekanizma:** Diğer tüm `conversation_turns` erişimleri (`/api/mark_said` 5403, `_transcribe_audio` 4152, snapshot) `_lifecycle_lock` altında; mic yolundaki bu tek append kilit dışında. CPython'da `deque.append` atomiktir → tek başına çökme riski düşük; asıl risk eşzamanlı `get_conversation_snapshot` iterasyonu sırasında tutarsız sıra.
-* **Öneri:** Tutarlılık için `with transcriber._lifecycle_lock:` içine al (diğer çağrılarla aynı desen).
+### [B-04] `configure_translation(provider, None)` kayıtlı çeviri anahtarını siliyor 🟡
+* **Konum:** `buyedektir.py:1525-1544` (`translation_api_keys[provider] = normalized_key` her zaman yazar), çağıranlar `4691`, `4741`.
+* **Mekanizma:** `api_key` parametresi verilmediğinde/boş geldiğinde `normalized_key=None` → sağlayıcının kayıtlı anahtarı üzerine `None` yazılır. Frontend normalde `apiKey`'i localStorage'dan her istekte gönderdiği için çoğunlukla maskelenir; fakat alanı boş bırakılmış eski bir sekme, temizlenmiş localStorage veya `apiKey` içermeyen bir POST, backend'deki anahtarı sessizce siler.
+* **Etki:** Çeviri bir sonraki istekte anahtarsız kalır; kullanıcı nedenini anlamaz (ayar değiştirmediğini sanır).
+* **Öneri:** `api_key is None` ise `translation_api_keys[provider]`'a dokunma ("gönderilmedi = değiştirme"); açık silme için ayrı `clear_key` bayrağı.
 
-### [A-07] Content Security Policy meta etiketi yok 🟡
-* **Konum:** `templates/index.html` ve `templates/overlay.html` — `<meta http-equiv="Content-Security-Policy">` yok.
-* **Mekanizma/Etki:** Electron navigasyonu `restrictWindowNavigation` ile sınırlandı ve server-verisi `escapeHtml`/`escapeJsString` ile kaçışlı; yine de derinlemesine savunma için `default-src 'self'` CSP önerilir. `index.html` büyük ölçüde inline script/style kullandığından `unsafe-inline` gerekir — tam kilitleme için scriptleri `static/`e taşımak gerekir (büyük iş).
-* **Öneri:** Kademeli: önce `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:5000 ws://127.0.0.1:5000`.
+### [B-05] Alt-PTT sonucu generation-uyuşmazlığında sessizce düşüyor → UI "işleniyor"da takılı �
+* **Konum:** `buyedektir.py:4949-4951`, `5082-5084`, `5098-5100` (`return` — `ptt_mic_result` yayınlanmaz); frontend `index.html:5158-5161` (`'⏳ Sesiniz işleniyor ve çevriliyor...'`), `cockpit.js:129` (`'Ses işleniyor'`). İstemci tarafında `ptt_mic_result` için timeout/watchdog yok.
+* **Mekanizma:** Mikrofon çözümlemesi sürerken kullanıcı Durdur/Temizle'ye basarsa `_result_generation` artar → üç dönüş yolu da **emit'siz** return eder. Frontend `ptt_mic_result`'i sonsuza dek bekler.
+* **Etki:** "⏳ Sesiniz işleniyor…" uyarısı ve `ownReplyStatus` takılı kalır; kayıt sessizce kaybolur. Kenar durum ama gerçek kullanıcı akışı (PTT sonrası hızlı Temizle).
+* **Öneri:** Stale-generation return yollarında `socketio.emit('ptt_mic_result', {recording_id, success:false, error:'Oturum sıfırlandı; kayıt işlenemedi'})` yayınla — frontend `renderPttTranscription` zaten hata durumunu gösteriyor. Alternatif/ek: frontend'e ~45 sn watchdog.
+
+### [B-06] `context_buffer` oturumlar arası temizlenmiyor + mic-dikte (TR) Whisper prompt'unu kirletiyor 🟡
+* **Konum:** `buyedektir.py:4148` (commit'te koşulsuz `context_buffer.append(full_text)`), `3463-3490` (`start_capture` — buffer temizlenmiyor), `5295-5297` (düzeltmede `source != 'ptt'` süzgeci — `'mic'` süzülmüyor), `2808-2853` (`get_context_prompt` kaynak süzgeci yok).
+* **Mekanizma:** `context_buffer` Whisper `initial_prompt`'u besliyor ve kodun kendi yorumu bunu açıkça söylüyor: "context_buffer'a Türkçe metin karışırsa karşı tarafın dilini kilitleme amacını bozar" (2510-2513). Fakat `capture_mode='mic'` oturumundaki Türkçe dikteler commit yolunda buffer'a girer; `start_capture` da buffer'ı temizlemez → sonraki 'system' oturumunda Japonca/Arapça dinlerken initial_prompt'a Türkçe metin karışır.
+* **Etki:** Dil-kilidi zayıflar; dinlenen dilde yanlış dilde transkripsiyon/algılama sapması olasılığı artar. Düzeltme yolu da 'mic' kayıtlarını buffer'a geri koyar.
+* **Öneri:** `get_context_prompt`'ta yalnız `source` bilinmeyen/`system` metinlerini kullan (kaynak bilgisi buffer'da yok → append anında rolu sakla veya mic-modunda append'i atla); veya `start_capture`'da `capture_mode` değişiminde buffer'ı temizle.
+
+### [A-05] Ctrl-PTT `setPtt`'de `keepalive` eksik 🟡
+* **Konum:** `templates/index.html:5037-5043` vs `5105`.
+* **Durum:** Alt-PTT'ye `keepalive: true` eklendi; sistem-sesi Ctrl-PTT'sine eklenmedi. `beforeunload`'daki `setPtt(false)` iptal edilebilir → `ptt_active` `MAX_PTT_S` kadar açık kalır.
+* **Öneri:** Tek satır: `keepalive: true`.
+
+### [B-07] `transcript_id` int değilse çeviri bağlamı kaydın kendisini içeriyor 🔵
+* **Konum:** `buyedektir.py:5554-5557`.
+* **Mekanizma:** `transcript_id` int değilse `context_id = _next_transcription_id + 1` atanır → `get_translation_context` `id < before_id` süzdüğü için cevaplanan kaydın kendisi de "önceki bağlam"a girer. Frontend şu an int gönderiyor; dize id'li istemcilerde (veya gelecekteki değişiklikte) mesaj metni BAĞLAM'da bir kez daha geçer.
+* **Öneri:** `int()` dönüşümü dene (`str.isdigit`); olmazsa `None` → bağlamı atla veya son kaydı hariç tut.
+
+### [B-08] `target_lang` doğrulanmıyor �
+* **Konum:** `buyedektir.py:5483` (`data.get('target_lang','ja')`).
+* **Mekanizma:** `None`/sayı/dize-dışı değerler doğrudan prompt'a ve `_build_pronunciation_guide`'a gider; `lang_names.get(None, None)` → `target_lang_name=None` → prompt'ta "None" basılır. Benzer şekilde `mode`/`tone`/`response_length` dışında doğrulama yok.
+* **Öneri:** `isinstance(target_lang, str)` ve `allowed` kümesi kontrolü (whisper_language route'undaki desen).
+
+### [B-09] Küçük sağlamlık boşlukları demeti 🔵
+* **`/api/ai_response_toggle` (5412):** `data.get('enabled', False)` bool-coerce edilmiyor — `"false"` dizesi truthy → `enabled=True`. (`/api/partial_toggle` `bool(...)` sarıyor — tutarsız.)
+* **`get_audio_devices` (3305-3377):** `p.terminate()` `finally`'de değil — numaralandırma ortasında fırlayan istisna PyAudio host'unu sızdırır (her `/api/devices` çağrısı bir host nesnesi açar).
+* **`_verify_openai_key` (2620-2625):** Doğrulama başarısız olursa `enabled=False` yapılır ama `api_key` korunur → `/api/status` `ai_available: bool(api_key)` → UI "AI var" gösterirken çağrılar disabled. Durum göstergesi `enabled && api_key` birleşimi olmalı.
+* **`__main__` başlangıç bannerı (6139-6143):** Bozulmuş emoji baytları (`"ğŸâ€â€ž"` vb.) — kaynak dosya bir noktada yanlış kodlamayla yazılmış; yalnız kozmetik (log/konsol çirkinliği).
+* **`__init__` (2661-2662):** `self.adaptive_silence = True` ve `self.translation_context = True` `DEFAULTS[...]` yerine sabit — `DEFAULTS`'taki aynı isimli anahtarlar fiilen ölü konfigürasyon (davranış aynı; tutarlılık notu).
+
+### Not — ilk tur düzeltmeleri
+* **A-06 gerçekte DÜZELTİLMİŞ:** `process_mic_audio`'daki `conversation_turns.append` `with transcriber._lifecycle_lock:` bloğunun içinde (`buyedektir.py:5097-5120`). İlk turdaki "kilit dışında" bulgusu iptal edildi → DERIN BUG-24 ve B-BE-001/016 artık ✅.
+* **A-07 gerçekte DÜZELTİLMİŞ:** CSP `<meta>` yok ama daha güçlüsü var — `set_browser_security_headers` (`buyedektir.py:104-116`) her yanıta `Content-Security-Policy` başlığı ekliyor (`default-src 'self'`, `object-src 'none'`, `frame-ancestors 'none'`). → TAM B-CFG-001 ✅.
 
 ---
 
 ## 3. BİLİNEN SINIRLAMA (tasarım kararı)
 
 ### [L-01] Telaffuz sözlüğü yalnız tam-eşleşmede uygulanır
-* **Konum:** `buyedektir.py:741-756` (`_apply_exact_pronunciation_override`).
-* **Durum:** DERIN BUG-30'da bildirilmişti; CLAUDE.md bunu bilinçli tasarım olarak belgeliyor ("substring replacement across unrelated native/phonetic alphabets is intentionally not attempted"). Kullanıcı "arigatou" için sözlük okunuşu eklerse "arigatou gozaimasu" cümlesinde uygulanmaz.
-* **Not:** Bug değil; aşağıdaki geliştirme önerilerine taşındı (G-05).
+* **Konum:** `buyedektir.py:741-756`.
+* **Durum:** CLAUDE.md'de bilinçli tasarım olarak belgelenmiş; öneri G-05'e taşındı.
 
 ---
 
@@ -83,15 +137,20 @@ Ayrıca **tasarım gereği olan 1 bilinen sınırlama** (telaffuz sözlüğü ya
 
 | ID | Öneri | Gerekçe |
 |----|-------|---------|
-| G-01 | **"Durdur" öncesi otomatik flush** — `stopCapture()` `/api/flush` çağırsın | A-01'i kullanıcı tarafında da kapatır; son söz kaybolmaz |
-| G-02 | **`/api/stop`'a `flush=true` parametresi** | Tek istekle "durdurmadan önce kuyruğu bitir" semantiği; ayrı flush+stop race'i kalmaz |
-| G-03 | **8.3 yol normalize etme** — `isOwnedWhisperBackend`'de `fs.realpathSync` veya kısa-yol expansion | A-02'yi kökten çözer |
-| G-04 | **GPU fallback uyarısı** — `load_model` yanıtına `gpu_fallback` bayrağı + UI banner | A-04'ü kullanıcıya görünür kılar |
-| G-05 | **Telaffuz sözlüğü kelime-sınırı ikamesi** — `target` ifadesi çeviri içinde tam kelime olarak geçiyorsa o segmenti kullanıcının okunuşuyla değiştir | L-01'i genişletir; yalnızca aynı alfabe ailesinde güvenli (Latin↔Latin) uygulanmalı |
-| G-06 | **`autoTranslateEnabled` + backend çeviri kilidi** | A-03 çift maliyetini önler |
-| G-07 | **CSP meta + scriptlerin `static/`e taşınması** | A-07 derinlemesine savunma |
-| G-08 | **Frontend unit-test altyapısı** — şu an yalnız `node --check` sözdizimi kontrolü var; `live-flow.js`/`runtime-safety.js` gibi saf mantık modülleri Node'da test edilebilir | Regresyon koruması |
-| G-09 | **`setPtt`'ye `keepalive`** + `beforeunload`'da `navigator.sendBeacon` alternatifi | A-05 tutarlılığı |
+| G-01 | **"Durdur" öncesi otomatik flush** — `stopCapture()` `/api/flush` çağırsın | A-01'i kullanıcı tarafında kapatır |
+| G-02 | **`/api/stop`'a `drain` kipi** | Tek istekle "durdurmadan önce kuyruğu bitir" semantiği |
+| G-03 | **8.3/göreli yol normalize etme** | A-02'yi kökten çözer |
+| G-04 | **GPU fallback uyarısı** — `gpu_fallback` bayrağı + UI banner | A-04'ü görünür kılar |
+| G-05 | **Telaffuz sözlüğü kelime-sınırı ikamesi** (aynı alfabe ailesinde) | L-01'i genişletir |
+| G-06 | **`autoTranslateEnabled` + backend çeviri kilidi** | A-03 maliyetini önler |
+| G-07 | **Diarization sonuç normalizasyonu + uyum testi** — `speaker_diarization` attr kontrolü, pyannote sürüm pini | B-01 kalıcı çözümü |
+| G-08 | **Frontend unit-test altyapısı** — `live-flow.js`/`runtime-safety.js`/`html-utils.js` saf mantık Node'da test edilebilir | Regresyon koruması |
+| G-09 | **`setPtt`'ye `keepalive` + `navigator.sendBeacon`** | A-05 tutarlılığı |
+| G-10 | **PTT işlem watchdog'u** — `ptt_mic_result` için ~45 sn istemci zaman aşımı | B-05'in frontend ayağı |
+| G-11 | **Ana OpenAI anahtarı çeviri fallback'i** — `snapshot_translation_request` boşken `api_key`'e düşsün | B-03: tek anahtarla çalışan kurulum |
+| G-12 | **`context_buffer`'a rol/kaynak etiketi** — append anında kaynak saklanıp prompt'ta mic/ptt elensin | B-06'nın temiz çözümü |
+| G-13 | **`answer_question` toplam-süre üst sınırı** — çeviri yolunda retry zinciri ~3 dk sürebilir; ortak bir `deadline` parametresi | translate_executor tıkanmasını sınırlar |
+| G-14 | **Diarization/çeviri başarısızlığını UI'a taşı** — `speaker_identified` hiç gelmiyorsa veya `diarization_failed` sağlık kodu varsa durum çubuğunda uyarı | B-01/B-02 gibi sessiz ölüm vakalarını görünür kılar |
 
 ---
 
@@ -101,87 +160,81 @@ Ayrıca **tasarım gereği olan 1 bilinen sınırlama** (telaffuz sözlüğü ya
 
 | # | Başlık | Durum | Kanıt |
 |---|--------|-------|-------|
-| BUG-01 | Alt-PTT hedef dil tersliği (`whisperLang` gönderiliyordu) | ✅ Düzeltildi | `index.html:5099` artık `aiTargetLang` okur; `keepalive: true` da eklendi |
-| BUG-02 | `<3` karakter halüsinasyon sayılıyordu ("はい", "OK" siliniyordu) | ✅ Düzeltildi | `buyedektir.py:2960-3055` `_is_likely_hallucination` uzunluk eşiği kaldırıldı; yalnız alfasayısal-olmayan gürültü eleniyor |
-| BUG-03 | Answer modunda `<4` karakter reddediliyordu | ✅ Düzeltildi | `generate_ai_response` (5477+) içinde `mesaj cok kisa` kontrolü yok |
-| BUG-04 | `remove_overlap` alt-dize katliamı | ✅ Düzeltildi | `transkribe.py:60-97` n-gram kelime örtüşmesi; `new_lower in prev_lower` kaldırıldı |
-| BUG-05 | `launcher_whisper.py` `npm` bulamıyor | ✅ Düzeltildi | `launcher_whisper.py:26-27` `shutil.which('npm.cmd' if win32)` |
-| BUG-06 | `beforeunload` mikrofon kapatma iptali | ✅ Düzeltildi (Alt) / ⚠️ kısmen (Ctrl) | `setAltPtt` `keepalive: true`; `setPtt`'de yok → A-05 |
-| BUG-07 | DeepL Pro anahtarları desteklenmiyor | ✅ Düzeltildi | `buyedektir.py:1820-1822` `endpoint_for_key` `:fx` kontrolü |
-| BUG-08 | `set_response_model` legacy alias kontrolü yok | ✅ Düzeltildi | `buyedektir.py:1497-1499` `_legacy_aliases` kontrolü eklendi |
-| BUG-09 | PTT öğelerinde `data-transcription-id` yok | ✅ Düzeltildi | `index.html:4067-4068` `item.dataset.transcriptionId` + `transcriptionTexts` |
-| BUG-10 | `totalCount` restore'da çifte sayım | ✅ Düzeltildi | `index.html:4302` `if (!restoring)` koruyucu |
-| BUG-11 | Çeviri `:` kırpması | ✅ Düzeltildi | `index.html:5561` yalnız bilinen ön-ekler (`Line N`, `Hedef`, `Target`) siliniyor |
-| BUG-12 | Çifte OpenAI çevirisi | ⚠️ Kısmen | Koşulsuz tetikleme kaldırıldı (`index.html:4289-4293` notu) ama iki anahtar birlikte açılabiliyor → A-03 |
-| BUG-13 | `MicRecorder.stop_stream` PortAudio yarışı | ✅ Düzeltildi | `buyedektir.py:2258,2382-2384` `_stream_lock` |
-| BUG-14 | Kanji-ağırlıklı Japonca `zh` sanılıyordu | ✅ Düzeltildi | `buyedektir.py:2938-2950` Kana varsa `ja`; `zh_han` baskınsa `detected_lang` kullanılır |
-| BUG-15 | `transkribe.py` Tkinter thread-unsafe `_log` | ✅ Düzeltildi | `transkribe.py:303-304` `_ui_events` kuyruğu + `after(50, ...)` drain |
-| BUG-16 | `reset()` HF token'ı kalıcı siliyordu | ✅ Düzeltildi | `buyedektir.py:2241-2247` dosya silinmez, `save_profiles()` ile token korunur |
-| BUG-17 | VRAM'de iki model + sessiz CPU düşüşü | ⚠️ Kısmen | Mevcut model varken OOM → açık hata (`buyedektir.py:3191`); ilk yüklemede hâlâ sessiz CPU → A-04 |
-| BUG-18 | Durdur'da son konuşma çöpe atılıyor | ❌ Hâlâ açık | `stop_capture` + commit kontrolü aynı → A-01 |
-| BUG-19 | Yunanca yok, Kiril→ru zorla | ✅ Düzeltildi | `buyedektir.py:2922,2954-2955` `el` eklendi; Kiril `detected_lang` kullanır |
-| BUG-20 | `update_speaker_name` kayıtları güncellemiyor | ✅ Düzeltildi | `buyedektir.py:4660-4665` transcriptions güncellenir + `speaker_updated` soketi; frontend `3525` dinliyor |
-| BUG-21 | `saveHFToken` boş token'ı temizleyemiyor | ✅ Düzeltildi | `index.html:2807` `whisperStorage.removeItem('hfToken')` + backend'e bildirim |
-| BUG-22 | `URL.revokeObjectURL` senkron iptal | ✅ Düzeltildi | `index.html:4469` `setTimeout(...,1000)` |
-| BUG-23 | `seenTranscriptionIds` temizlenmiyor | ✅ Düzeltildi | `index.html:3984-3986` `seenTranscriptionIds.delete(removedId)` |
-| BUG-24 | `conversation_turns.append` kilitsiz | ⚠️ Kısmen | Ana pipeline + `mark_said` kilitli; mic yolundaki tek append hâlâ dışarıda → A-06 |
-| BUG-25 | `_resample_filter` eşit oranlarda `firwin` çökmesi | ✅ Düzeltildi | `buyedektir.py:282-283` eşit oranlarda erken dönüş |
-| BUG-26 | Alt+Tab/Alt+F4 hayalet kayıt | ✅ Düzeltildi | `index.html:5171-5189` 150ms `altPttPendingTimer` + `e.altKey` ile başka tuşta `finishAltPtt(true)` |
-| BUG-27 | `get_context_prompt` kelime ortası kesme | ✅ Düzeltildi | `buyedektir.py:2840-2846` boşluk sınırından dilimleme |
-| BUG-28 | `<0.5s` cümleler VAD'de siliniyor | ✅ Düzeltildi | `buyedektir.py:3772` eşik `> 0.2` saniyeye indi |
-| BUG-29 | 8.3 kısa yollarda `isOwnedWhisperBackend` başarısız | ❌ Hâlâ açık | `main_helpers.js:11-13` hâlâ tam yol `includes` → A-02 |
-| BUG-30 | Telaffuz override yalnız tam-eşleşme | ℹ️ Tasarım kararı | CLAUDE.md'de bilinçli olarak belgelendi → L-01 |
+| BUG-01 | Alt-PTT hedef dil tersliği | ✅ Düzeltildi | `index.html:5099` `aiTargetLang` + `keepalive` |
+| BUG-02 | `<3` karakter halüsinasyon | ✅ Düzeltildi | uzunluk eşiği yok; yalnız gürültü kalıpları |
+| BUG-03 | Answer `<4` karakter reddi | ✅ Düzeltildi | kontrol yok |
+| BUG-04 | `remove_overlap` alt-dize | ✅ Düzeltildi | `transkribe.py:60-97` n-gram |
+| BUG-05 | launcher `npm` | ✅ Düzeltildi | `shutil.which('npm.cmd')` |
+| BUG-06 | `beforeunload` mic kapatma | ✅ Alt / ⚠️ Ctrl | `setPtt`'de `keepalive` yok → A-05 |
+| BUG-07 | DeepL Pro anahtarı | ✅ Düzeltildi | `endpoint_for_key` `:fx` |
+| BUG-08 | `set_response_model` alias | ✅ Düzeltildi | `_legacy_aliases` |
+| BUG-09 | PTT `data-transcription-id` | ✅ Düzeltildi | `index.html:4068` |
+| BUG-10 | `totalCount` çifte sayım | ✅ Düzeltildi | `!restoring` |
+| BUG-11 | Çeviri `:` kırpması | ✅ Düzeltildi | bilinen ön-ek süzgeci |
+| BUG-12 | Çifte OpenAI çevirisi | ⚠️ Kısmen | iki anahtar birlikte açılabiliyor → A-03 |
+| BUG-13 | `stop_stream` PortAudio yarışı | ✅ Düzeltildi | `_stream_lock` |
+| BUG-14 | Kanji→zh yanlış dil | ✅ Düzeltildi | Kana kontrolü + `zh_han` |
+| BUG-15 | transkribe Tkinter thread | ✅ Düzeltildi | `_ui_events` kuyruğu |
+| BUG-16 | `reset()` HF token silmesi | ✅ Düzeltildi | `save_profiles()` ile korunur |
+| BUG-17 | VRAM iki model + CPU düşüşü | ⚠️ Kısmen | ilk yüklemede sessiz → A-04 |
+| BUG-18 | Durdur'da son konuşma | ❌ Açık | → A-01 |
+| BUG-19 | Yunanca/Kiril | ✅ Düzeltildi | `el` + `detected_lang` |
+| BUG-20 | `update_speaker_name` kayıtlar | ✅ Düzeltildi | geçmiş güncelleme + `speaker_updated` |
+| BUG-21 | `saveHFToken` boş token | ✅ Düzeltildi | `removeItem` + backend bildirimi |
+| BUG-22 | `revokeObjectURL` senkron | ✅ Düzeltildi | `setTimeout` |
+| BUG-23 | `seenTranscriptionIds` | ✅ Düzeltildi | prune'da siliniyor |
+| BUG-24 | `conversation_turns` kilitsiz | ✅ Düzeltildi | mic append'i de `_lifecycle_lock` içinde (5097-5120) — ilk tur notu düzeltildi |
+| BUG-25 | `_resample_filter` firwin | ✅ Düzeltildi | eşit oran erken dönüş |
+| BUG-26 | Alt+Tab hayalet kayıt | ✅ Düzeltildi | 150ms timer + `e.altKey` |
+| BUG-27 | `get_context_prompt` kesme | ✅ Düzeltildi | boşluk sınırı |
+| BUG-28 | `<0.5s` VAD silinmesi | ✅ Düzeltildi | `> 0.2` eşiği |
+| BUG-29 | 8.3 `isOwnedWhisperBackend` | ❌ Açık | → A-02 (göreli-yol varyantı da eklendi) |
+| BUG-30 | Telaffuz tam-eşleşme | ℹ️ Tasarım | → L-01 |
 
 ### 5.2 `BUG_TARAMASI_TAM_RAPOR.md` — kritik/yüksek maddelerin durumu
 
 | # | Durum | Not |
 |---|-------|-----|
-| B-FR-001 renderAiResult null guard | ✅ | `renderAiResult` içinde `aiResult` elemanı kontrol ediliyor |
-| B-FR-002 socket.off birikimi | ✅ | Tek `setupSocketListeners` kurulumu; sayfa tek yüklemede kalıyor |
-| B-FR-003 saveHFToken .catch | ✅ | `index.html:2807-2812` boş-token yolu + catch var |
-| B-FR-004 startCapture retry/stop race | ✅ | `stopCapture` `cancelCaptureStartRetries()` çağırıyor |
-| B-FR-005 stopCapture success=false | ✅ | `else` dalında `data.error` gösteriliyor |
-| B-BE-001/016 conversation_turns kilit | ⚠️ | Ana akış kilitli; mic yolu append'i dışarıda → A-06 |
-| B-BE-002 transcriptions deque çakışması | ✅ | Tüm erişimler `_lifecycle_lock` altında |
-| B-BE-003 speaker_names race | ✅ | `_profile_lock` eklendi |
-| B-BE-004/005/006 session kontrolleri | ✅ | `process_mic_audio` generation kontrolleri (4951, 5083, 5099); partial emit session kontrollü |
-| B-BE-007..015 | ✅ | `_stream_lock`, `_model_lock`, `_lifecycle_lock`, `_profile_lock`, queue sentinel, stream read timeout, tek-writer `_append_transcript` — doğrulandı |
-| B-INF-001/002 build whitelist | ✅ | `build.js` allowlist + sızıntı taraması |
-| B-INF-003 electron-store v8 ESM | ✅ | Bu ortamda `require('electron-store')` çalışıyor (v8 CJS-interop); try/catch + `store=null` fallback de var |
-| B-INF-004 launcher shell=True | ✅ | Liste argümanı + `shutil.which` |
-| B-INF-005 session cookie | ✅ | Uygulamada oturum çerezi yok; token header tabanlı |
-| B-FR-006..011 fetch/.catch eksikleri | ✅ | Merkezi fetch sarmalayıcı `X-Whisper-Token` ekliyor; kritik çağrılar catch'li |
-| B-FR-009 indirme `\n` | ✅ | `index.html:4414` `NL='\r\n'` |
-| B-TST-001..003 | ✅ | `test_smoke.py` yeniden yazıldı; transkribe file-handle'ları `with` bloklarında |
-| B-DBG-001..005 | ✅ | API anahtarları HTML'de yok; `showAlert`/`correctText`/`addTranscription` kaçışlı |
-| B-CFG-001 CSP | ❌ | Hâlâ yok → A-07 |
-| B-CFG-002/003 raw hata sızıntısı | ✅ | Socket hata olayları sanitize ediliyor; OpenAI detayları log'a, kullanıcıya özet |
-| B-DEP-001..003 | ✅ | `webrtcvad`/`pyannote` kurulu; GPU torch çalışıyor (aşağıdaki doğrulama bölümü) |
+| B-FR-001..011 | ✅ | null guard, socket kurulumu, catch'ler, retry iptali, `\r\n` export — doğrulandı |
+| B-BE-001..016 | ✅ | tüm kilit desenleri + mic append'in de kilit içinde olduğu doğrulandı |
+| B-INF-001..005 | ✅ | allowlist, electron-store fallback, liste argümanı, header-token |
+| B-TST-001..003 | ✅ | `test_smoke.py` geçiyor |
+| B-DBG-001..005 | ✅ | HTML'de anahtar yok; kaçışlar tam |
+| B-CFG-001 CSP | ✅ Düzeltildi | `after_request` CSP başlığı mevcut (`buyedektir.py:104-116`) — ilk tur notu düzeltildi |
+| B-CFG-002/003 | ✅ | sanitize edilmiş hata yolları |
+| B-DEP-001..003 | ⚠️ | webrtcvad/torch OK; **pyannote 4.0.4 API kırılması → B-01**; torchcodec bozuk → B-02 |
 
 ---
 
-## 6. DOĞRULAMA (bu oturumda çalıştırılanlar)
+## 6. DOĞRULAMA (bu oturumlarda çalıştırılanlar)
 
 | Komut | Sonuç |
 |-------|-------|
-| `python -m py_compile buyedektir.py` | ✅ `py_compile OK` |
+| `python -m py_compile buyedektir.py` | ✅ |
 | `python -m pyflakes buyedektir.py` | ✅ hata yok |
-| `python test_smoke.py` | ✅ `TUM TESTLER GECTI` (ayar sınırları, telaffuz tabloları, halüsinasyon filtresi, cevap-modu paralel+partial+dedup, JSON salvage, pause/flush, mic worker, diarization, clear-generation, çeviri backlog, model-load kilitleri, AI rate limit, chat doğrulama) |
-| `node --check` — `static/cockpit.js`, `live-flow.js`, `quick-phrases.js`, `reading-mode.js`, `runtime-safety.js`, `html-utils.js`, `main.js`, `main_helpers.js`, `preload.js`, `build.js` | ✅ hepsi geçti |
-| `node --check` — `index.html`/`overlay.html` inline scriptleri | ⚠️ Jinja placeholder (`{{ app_token|tojson }}`) nedeniyle doğrudan parse edilemedi; `"TOKEN"` literal ile değiştirilip kontrol edildi → geçti. Bu bir doğrulama yöntemi sınırlamasıdır, uygulama hatası değil. |
-| `git status` | Çalışma ağacında bu rapor + eski raporlar untracked; kod değişikliği yok |
+| `python test_smoke.py` | ✅ `TUM TESTLER GECTI` (telaffuz tabloları, halüsinasyon filtresi, cevap paralel+partial+dedup, JSON salvage, pause/flush, mic worker, clear-generation, backlog, model kilitleri, AI rate limit, chat, transkribe yardımcıları + tests/archive süitleri) |
+| `node --check` — tüm `static/*.js`, `main.js`, `main_helpers.js`, `preload.js`, `build.js` | ✅ |
+| `node --check` — inline scriptler | ⚠️ Jinja placeholder literal ile değiştirilerek kontrol edildi → geçti (yöntem sınırlaması, hata değil) |
+| `require('./main_helpers')` + `main.js` CommonJS yükleme | ✅ |
+| pyannote.audio kurulu sürüm | **4.0.4** — `SpeakerDiarization.apply` → `DiarizeOutput` (itertracks yok); `legacy=False` varsayılan → **B-01 kanıtı** |
+| torchcodec | `.venv`'de bozuk (`libtorchcodec_core8.dll` yüklenemiyor, torch 2.10.0+cu130) → **B-02 kanıtı** |
+| `git status` | Kod değişikliği yok; rapor/devir belgeleri untracked |
+
+**Çalıştırılmayan kontroller:** gerçek ses akışıyla uçtan uca test (mikrofon/sistem sesi), gerçek OpenAI/DeepL çağrıları, diarization'ın çalışan bir ortamda gözlemi (bu ortamda B-01 nedeniyle imkânsız), `npm run build` tam paketleme, Electron davranış testi.
 
 ---
 
 ## 7. ÖNCELİK SIRASI ÖNERİSİ
 
-1. **A-01** — Durdur'da son konuşmanın kaybı (kullanıcı-verisi kaybı; tek satır frontend flush çağrısıyla kısmen, backend'de generation ayrıştırmasıyla tam çözülür).
-2. **A-02** — 8.3 yol; etkilenen kullanıcı uygulamayı hiç açamaz.
-3. **A-04** — İlk yükleme GPU→CPU sessiz düşüş (kullanıcı fark etmez, performans 10x kötüleşir).
-4. **A-03 + G-06** — Çift çeviri maliyeti.
-5. **A-05** — Tek satırlık `keepalive` tutarlılığı.
-6. **A-06, A-07, G-01..G-09** — düşük öncelik, sonraki sprintler.
+1. **B-01 + B-02** — Konuşmacı tanıma bu kurulumda tamamen ölü; düzeltme küçük (`getattr(diarization,'speaker_diarization',diarization)`) ama etkisi büyük. torchcodec'i de aynı işte hallet.
+2. **A-01** — Durdur'da son konuşmanın kaybı (veri kaybı).
+3. **A-02** — Yol eşleşmesi; etkilenen kullanıcı uygulamayı açamaz.
+4. **B-03 + B-04 + G-11** — Çeviri anahtarı yaşam döngüsü: yanlış "aktif" mesajı + sessiz anahtar silinmesi + tek-anahtar beklentisi.
+5. **A-04, A-03** — sessiz CPU düşüşü ve çift çeviri maliyeti.
+6. **B-05 + G-10** — PTT sessiz düşüş → backend'e hata emit'i (tek satır deseni) + watchdog.
+7. **B-06** — mic-dikte kirlenmesi; dil kilidi kalitesi.
+8. **A-05, B-07..B-09** — küçük tutarlılık/sağlamlık düzeltmeleri.
 
 ---
 
-*Bu rapor statik kod incelemesi + yukarıdaki doğrulama komutlarına dayanır; çalışma-zamanı (runtime) davranışı her ortamda birebir doğrulanmamıştır. Özellikle A-01/A-04 gerçek donanım/ses akışında yeniden üretilmelidir.*
+*Bu rapor statik kod incelemesi, kurulu `.venv` paket-sürümü/API doğrulamaları ve yukarıdaki komutlara dayanır; çalışma-zamanı davranışı her ortamda birebir doğrulanmamıştır. Özellikle A-01/A-04 gerçek donanım/ses akışında, B-01/B-02 diarization açıkken yeniden üretilmelidir.*
