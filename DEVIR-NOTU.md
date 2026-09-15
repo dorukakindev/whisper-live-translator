@@ -1,6 +1,6 @@
 # Devir notları
 
-Güncel devir notu: [2026-09-15 04:43 — konuşma akışına geniş sağ sütun](docs/devir/2026-09-15-0443.md).
+Güncel devir notu: [2026-09-15 04:54 — konuşma listesinin dikey alanı](docs/devir/2026-09-15-0454.md).
 
 Güncel eşitleme notu: [2026-09-15 04:30 — yerel/GitHub doğrulaması](docs/devir/2026-09-15-0430.md). Önceki kayıtlar aşağıda korunmuştur.
 
@@ -9,6 +9,8 @@ Yeni oturum ve format sonrası kurulum: [BASLANGIC.md](BASLANGIC.md)
 Güncel devir notu: [2026-09-14 14:50 — Oyun modu ve dengeli ses profili](docs/devir/2026-09-14-1450.md)
 
 ## Arşiv
+
+- [2026-09-15 04:43 — konuşma akışına geniş sağ sütun](docs/devir/2026-09-15-0443.md)
 
 - [2026-09-15 03:03 — kökte tek güncel başlatıcı](docs/devir/2026-09-15-0303.md)
 
