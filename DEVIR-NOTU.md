@@ -1,6 +1,8 @@
 # Devir notları
 
-Güncel devir notu: [2026-09-15 04:54 — konuşma listesinin dikey alanı](docs/devir/2026-09-15-0454.md).
+Güncel devir notu: [2026-09-15 10:21 — genel kod denetimi ve konsolide bug raporu](docs/devir/2026-09-15-1021.md).
+
+Önceki devir notu: [2026-09-15 04:54 — konuşma listesinin dikey alanı](docs/devir/2026-09-15-0454.md).
 
 Güncel eşitleme notu: [2026-09-15 04:30 — yerel/GitHub doğrulaması](docs/devir/2026-09-15-0430.md). Önceki kayıtlar aşağıda korunmuştur.
 
