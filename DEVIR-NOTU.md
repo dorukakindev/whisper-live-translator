@@ -1,5 +1,7 @@
 # Devir notları
 
+Current handoff: [2026-09-16 19:42 - English feature walkthrough and Game Mode media](docs/devir/2026-09-16-1942.md).
+
 Current handoff: [2026-09-16 18:27 - English public repository profile](docs/devir/2026-09-16-1827.md).
 
 Güncel devir notu: [2026-09-15 11:25 — dördüncü tur (fuzz/stres testleriyle hedefli bug avı)](docs/devir/2026-09-15-1125.md).
