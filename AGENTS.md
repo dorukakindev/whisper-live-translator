@@ -49,9 +49,9 @@ There is no test framework. Validate changes with:
 
 **AI reply suggestions (`/api/generate_ai_response`).** Modes: `answer` (reply options), `translate`, `translate_dual`. Key design points:
 
-- **Answer mode runs TWO parallel OpenAI calls** (via `_ai_executor`) that split the 4 suggestions by style (2 + 2, see `style_splits`) — latency is dominated by output tokens, so halving per-call output roughly halves wait. Results are merged and deduplicated (`_extract_answer_options` / `_parse_answer_options`); if one call fails the other's options still show. `_salvage_answer_options` recovers truncated JSON.
+- **Answer mode runs TWO parallel provider calls (Anthropic or OpenAI)** (via `_ai_executor`) that split the 4 suggestions by style (2 + 2, see `style_splits`) — latency is dominated by output tokens, so halving per-call output roughly halves wait. Results are merged and deduplicated (`_extract_answer_options` / `_parse_answer_options`); if one call fails the other's options still show. `_salvage_answer_options` recovers truncated JSON.
 - **Streaming:** if the UI sends a `request_id`, each parallel call emits its options via the `ai_options_partial` socket event the moment it finishes, so suggestions appear before the HTTP response (which returns the merged, deduped, canonical list).
-- **Prompt structure:** static rule blocks (pronunciation guides, tone/quality rules) go FIRST, variable content (context + the message) LAST, to hit OpenAI's automatic prefix caching. Don't reorder casually.
+- **Prompt structure:** static rule blocks (pronunciation guides, tone/quality rules) go FIRST, variable content (context + the message) LAST, to preserve provider prompt caching. Don't reorder casually.
 
 **Pronunciation system.** `PRONUNCIATION_GUIDES` holds per-language romanization rules; `_build_pronunciation_guide(lang)` injects ONLY the target language's guide (irrelevant languages degrade quality). `_normalize_turkish_pronunciation(text, lang)` post-processes model output into readable Turkish per language — note Japanese intentionally keeps hyphens (`kore-va`, `suki-des-ka`) while all other languages strip them. `_finalize_pronunciation` is the shared final cleanup.
 
@@ -62,11 +62,11 @@ There is no test framework. Validate changes with:
 ## Configuration & gotchas
 
 - **Restart the backend after editing `index.html` or `buyedektir.py`.** Flask/Jinja caches the rendered template, so editing `templates/index.html` and just reloading the page serves the OLD HTML — restart the Python process (`başlat.bat` / `npm start`, or `python buyedektir.py`). For the portable `dist/` exe, run `npm run build` (dist is a full copy). This is the #1 source of "my change didn't take effect" confusion.
-- **API key:** the AI features read `OPENAI_API_KEY` from the environment/`.env` and call `https://api.openai.com/v1/chat/completions` (default model `gpt-4.1-mini` — chosen via live testing as the best speed/quality non-reasoning mini: ~2.8s/reply, 0% Turkish-leak in the okunuş, no reasoning-token cost; selectable from `allowed_models`). If unset, AI suggestions/translation are disabled (startup logs "OPENAI_API_KEY ... bulunamadı"). The key is verified in a background thread so startup isn't blocked.
+- **AI providers:** reply/pronunciation generation can use official Anthropic (`ANTHROPIC_API_KEY`, `https://api.anthropic.com/v1/messages`) or official OpenAI (`OPENAI_API_KEY`, Chat Completions). Provider keys, response models, translation models, and translation keys remain separate. Claude is listed first in the UI; an existing OpenAI configuration is preserved. Keys are verified without blocking startup.
 - **Secret hygiene:** API keys and tokens belong only in the ignored `.env`; never keep them in notes, transcripts, test fixtures, or other plaintext repository files. `npm run scan` checks the source tree before packaging, but any exposed key must still be revoked and rotated at its provider.
 - **Legacy env vars:** `.env` may still carry `MINIMAX_*` keys from an older provider — **the current code ignores them**. Don't wire them back in without intent.
 - **`HF_TOKEN`** enables pyannote speaker diarization, which is **lazy-loaded** (only when diarization is turned on, not at startup) to keep launch fast.
-- **DeepL** translation is optional (`DeepLTranslator`); when the provider is OpenAI the key lives on the responder. `translate(..., force=True)` bypasses the live-transcription translation toggle for user-initiated (PTT) translations.
+- **DeepL** translation is optional (`DeepLTranslator`); Anthropic, OpenAI, and reseller translation keys live separately on the responder. `translate(..., force=True)` bypasses the live-transcription translation toggle for user-initiated (PTT) translations.
 - `buyedektir.py` uses **LF line endings** — preserve them when editing on Windows.
 - Transcripts append to `transcriptions.txt` (auto-rotates at 5 MB); speaker profiles persist as `speaker_profiles.json` (JSON, not pickle — avoids deserialization risk).
 
