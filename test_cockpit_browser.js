@@ -14,7 +14,7 @@ function fixtureHtml() {
     html = html.replace('<script src="/static/socket.io.min.js"></script>', '');
     html = html.replace('<script src="/static/runtime-safety.js"></script>',
         `<script>${fs.readFileSync(path.join(__dirname, 'static', 'runtime-safety.js'), 'utf8')}</script>`);
-    for (const moduleName of ['html-utils.js', 'cockpit.js', 'live-flow.js', 'reading-mode.js', 'quick-phrases.js']) {
+    for (const moduleName of ['html-utils.js', 'i18n.js', 'cockpit.js', 'live-flow.js', 'reading-mode.js', 'quick-phrases.js']) {
         html = html.replace(`<script src="/static/${moduleName}"></script>`,
             `<script>${fs.readFileSync(path.join(__dirname, 'static', moduleName), 'utf8')}</script>`);
     }
@@ -85,6 +85,42 @@ app.whenReady().then(async () => {
     })`);
     assert.strictEqual(initial.cards, 4);
     assert.deepStrictEqual(initial.duplicateIds, []);
+    const localization = await win.webContents.executeJavaScript(`(async()=>{
+        whisperI18n.setLanguage('en');
+        const originalTranscript = document.querySelector('.transcription-original')?.textContent;
+        const originalTranslation = document.querySelector('.translation-text')?.textContent;
+        const english = {
+            lang: document.documentElement.lang,
+            selector: document.getElementById('uiLanguage')?.value,
+            brand: document.querySelector('.brand-subtitle')?.textContent,
+            game: document.getElementById('gameModeBtn')?.textContent,
+            settings: document.querySelector('#controlsToggleBtn .header-action-label')?.textContent
+        };
+        whisperI18n.setLanguage('tr');
+        const turkish = {
+            lang: document.documentElement.lang,
+            selector: document.getElementById('uiLanguage')?.value,
+            brand: document.querySelector('.brand-subtitle')?.textContent,
+            game: document.getElementById('gameModeBtn')?.textContent
+        };
+        whisperI18n.setLanguage('en');
+        const dynamic = document.createElement('div');
+        dynamic.id = 'i18nDynamicProbe';
+        dynamic.textContent = 'Çeviri hazırlanıyor…';
+        document.body.appendChild(dynamic);
+        await new Promise(resolve=>setTimeout(resolve,0));
+        const dynamicEnglish = dynamic.textContent;
+        const contentPreserved = originalTranscript === document.querySelector('.transcription-original')?.textContent
+            && originalTranslation === document.querySelector('.translation-text')?.textContent;
+        return {english,turkish,dynamicEnglish,contentPreserved,
+            stored:whisperStorage.getItem('whisperUiLanguage')};
+    })()`);
+    assert.deepStrictEqual(localization, {
+        english:{lang:'en',selector:'en',brand:'Live translation and conversation assistant',game:'Game Mode',settings:'Settings'},
+        turkish:{lang:'tr',selector:'tr',brand:'Canlı çeviri ve konuşma asistanı',game:'Oyun modu'},
+        dynamicEnglish:'Preparing translation…',contentPreserved:true,stored:'en'
+    });
+    await win.webContents.executeJavaScript("whisperI18n.setLanguage('tr')");
     const ownership = await win.webContents.executeJavaScript('window.__cockpitSelfTest');
     assert.deepStrictEqual(ownership, {staleIgnored:true, readingPreserved:true,
         latencyDetailsVisible:true, setupStepCount:4, setupTargetFocused:true,
@@ -477,7 +513,7 @@ app.whenReady().then(async () => {
     assert(modeChecks.on && modeChecks.off, JSON.stringify(modeChecks));
     let overlay = fs.readFileSync(path.join(__dirname, 'templates', 'overlay.html'), 'utf8');
     overlay = overlay.replace('<script src="/static/socket.io.min.js"></script>', '<script>window.overlayEvents={};function io(){return {on(name,fn){overlayEvents[name]=fn;}};}</script>');
-    for (const name of ['runtime-safety.js', 'html-utils.js']) overlay = overlay.replace(`<script src="/static/${name}"></script>`, `<script>${fs.readFileSync(path.join(__dirname,'static',name),'utf8')}</script>`);
+    for (const name of ['runtime-safety.js', 'html-utils.js', 'i18n.js']) overlay = overlay.replace(`<script src="/static/${name}"></script>`, `<script>${fs.readFileSync(path.join(__dirname,'static',name),'utf8')}</script>`);
     overlay = overlay.replace('<link rel="stylesheet" href="/static/whisper-pro-theme.css">', `<style>${fs.readFileSync(path.join(__dirname,'static','whisper-pro-theme.css'),'utf8')}</style>`).replace('{{ app_token|tojson }}','"fixture-token"');
     const overlayPath = path.join(outputDir, 'overlay.html');
     fs.writeFileSync(overlayPath, overlay);

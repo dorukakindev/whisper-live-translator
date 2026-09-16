@@ -36,7 +36,7 @@ components:
 
 Windows'ta görüşme sırasında kullanılan ürün arayüzü. Kullanıcı Türkçe bilir, karşı tarafın dilini bilmese de Türkçe harfli okunuşu seslendirir. Kaynak: AGENTS.md, BASLANGIC.md, buyedektir.py cevap modu sözleşmesi. Kullanıcının 14 Eylül 2026 geri bildirimi önceki yeşil kart düzenini yeterince programa uygun bulmadı; bu revizyon o tasarımın yerine geçer.
 
-Referans dünyası: simultane tercüman masası; ses kontrol şeridi, gelen konuşma ve tek bir açık okuma yüzeyi. İmza öğesi koyu konsol üzerindeki açık renkli, büyük puntolu okunuş yüzeyidir. Pazarlama sayfası, istatistik panosu veya eşit ağırlıklı dört kart görünümü kullanılmaz. Arayüz dili Türkçe; yabancı alfabeler konuşma içeriğidir, Japonya pazarı veya Japonca arayüz varsayılmaz.
+Referans dünyası: simultane tercüman masası; ses kontrol şeridi, gelen konuşma ve tek bir açık okuma yüzeyi. İmza öğesi koyu konsol üzerindeki açık renkli, büyük puntolu okunuş yüzeyidir. Pazarlama sayfası, istatistik panosu veya eşit ağırlıklı dört kart görünümü kullanılmaz. Arayüz varsayılan olarak İngilizcedir ve üst başlıktaki seçiciden Türkçeye çevrilebilir; yabancı alfabeler konuşma içeriğidir, Japonya pazarı veya Japonca arayüz varsayılmaz.
 
 Token sahibi Model B: static/whisper-pro-theme.css içindeki --wp-* değişkenleri. Bu belge değerleri ve gerekçeleri yansıtır; CSS → eski --primary/--bg-* aliasları → ortak bileşenler tek çalışma yoludur. Electron ve Flask aynı HTML/CSS'yi kullanır.
 

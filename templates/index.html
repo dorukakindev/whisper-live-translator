@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
@@ -8,6 +8,7 @@
     <script src="/static/socket.io.min.js"></script>
     <script src="/static/runtime-safety.js"></script>
     <script src="/static/html-utils.js"></script>
+    <script src="/static/i18n.js"></script>
     <style>
         :root {
             --bg-main: #090d16;
@@ -1563,6 +1564,13 @@
             </div>
             <div class="header-actions">
                 <button class="btn" id="gameModeBtn" type="button" aria-pressed="false" onclick="toggleGameMode()" title="Dengeli hızlı diyalog profili ve çeviri kutusu">Oyun modu</button>
+                <label class="ui-language-control" title="Arayüz dili">
+                    <span>Arayüz</span>
+                    <select id="uiLanguage" aria-label="Arayüz dili" onchange="window.whisperI18n.setLanguage(this.value)">
+                        <option value="en" data-i18n-ignore>English</option>
+                        <option value="tr" data-i18n-ignore>Türkçe</option>
+                    </select>
+                </label>
                 <div class="header-live-state" id="connectionState" role="status" aria-live="polite">Bağlanıyor</div>
                 <button class="btn" id="controlsToggleBtn" type="button" aria-controls="controlPanel"
                     aria-expanded="true" onclick="toggleControlPanel()" title="Ayar panelini daralt">

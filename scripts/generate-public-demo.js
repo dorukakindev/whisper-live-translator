@@ -15,7 +15,7 @@ function fixtureHtml() {
     html = html.replace('<script src="/static/socket.io.min.js"></script>', '');
     html = html.replace('<script src="/static/runtime-safety.js"></script>',
         `<script>${fs.readFileSync(path.join(rootDir, 'static', 'runtime-safety.js'), 'utf8')}</script>`);
-    for (const name of ['html-utils.js', 'cockpit.js', 'live-flow.js', 'reading-mode.js', 'quick-phrases.js']) {
+    for (const name of ['html-utils.js', 'i18n.js', 'cockpit.js', 'live-flow.js', 'reading-mode.js', 'quick-phrases.js']) {
         html = html.replace(`<script src="/static/${name}"></script>`,
             `<script>${fs.readFileSync(path.join(rootDir, 'static', name), 'utf8')}</script>`);
     }

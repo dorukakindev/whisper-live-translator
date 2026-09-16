@@ -2098,3 +2098,36 @@ body.light-mode .reply-choice[aria-pressed="true"] .reply-choice-number { color:
 
 #gameModeBtn { min-width: 126px; }
 #gameModeBtn[aria-pressed='true'] { color: var(--wp-text); border-color: var(--wp-accent); background: color-mix(in srgb, var(--wp-accent) 18%, var(--wp-surface)); }
+/* Üst başlıktaki arayüz dili seçicisi kompakt kalır; içerik dili ayarlarından ayrıdır. */
+.ui-language-control {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid var(--wp-border);
+  border-radius: var(--wp-radius-sm);
+  background: var(--wp-raised);
+  color: var(--wp-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .035em;
+  white-space: nowrap;
+}
+.ui-language-control select {
+  min-width: 88px;
+  padding: 6px 25px 6px 8px;
+  border: 0;
+  background-color: var(--wp-canvas);
+  color: var(--wp-text);
+  font: inherit;
+  letter-spacing: 0;
+}
+.ui-language-control:focus-within {
+  border-color: var(--wp-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--wp-accent) 20%, transparent);
+}
+@media (max-width: 1180px) {
+  .ui-language-control > span { display: none; }
+  .ui-language-control { padding-inline: 6px; }
+}

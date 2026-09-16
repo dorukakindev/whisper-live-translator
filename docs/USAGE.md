@@ -1,6 +1,6 @@
 # Usage
 
-Whisper Pro combines local speech recognition with optional cloud translation and reply generation. The application interface is currently primarily Turkish; this guide uses English feature names followed by the visible Turkish label where that helps identify a control.
+Whisper Pro combines local speech recognition with optional cloud translation and reply generation. The interface starts in English. Use the **Interface** selector in the top header to switch to **Türkçe**; the preference is stored locally and also applies to the Game Mode overlay.
 
 ## 1. Prepare the application
 

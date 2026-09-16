@@ -14,7 +14,7 @@ The live workspace keeps the full conversation readable while reply suggestions 
 
 [Watch the short MP4 demo](docs/media/whisper-pro-demo.mp4) · [View reading mode at full resolution](docs/media/whisper-pro-reading-mode.png)
 
-> The media above is rendered from the real Electron UI with synthetic conversation data and an English presentation layer. The shipping interface is currently primarily Turkish.
+> The media above is rendered from the real Electron UI with synthetic conversation data. The interface starts in English; choose **Türkçe** from the **Interface** selector in the top header at any time.
 
 > [!IMPORTANT]
 > This project is under active development. Never commit API keys or private transcripts, and review the known limitations before important use.

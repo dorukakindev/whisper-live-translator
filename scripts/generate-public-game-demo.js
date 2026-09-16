@@ -13,7 +13,7 @@ function fixtureHtml() {
     let html = fs.readFileSync(path.join(rootDir, 'templates', 'overlay.html'), 'utf8');
     html = html.replace('<script src="/static/socket.io.min.js"></script>',
         '<script>window.overlayEvents={};function io(){return {on(name,fn){overlayEvents[name]=fn;}};}</script>');
-    for (const name of ['runtime-safety.js', 'html-utils.js']) {
+    for (const name of ['runtime-safety.js', 'html-utils.js', 'i18n.js']) {
         html = html.replace(`<script src="/static/${name}"></script>`,
             `<script>${fs.readFileSync(path.join(rootDir, 'static', name), 'utf8')}</script>`);
     }
