@@ -28,6 +28,62 @@ The live workspace keeps the full conversation readable while reply suggestions 
 - Optional speaker diarization and a compact game overlay
 - Local-only backend by default (`127.0.0.1`)
 
+## What you can do
+
+| Feature | What it does | How to use it |
+| --- | --- | --- |
+| Live conversation | Captures a microphone or Windows system audio and turns speech into a readable conversation stream. | Open **Settings**, choose the source and language, then start listening. |
+| On-demand translation | Lets you leave automatic translation off and translate only the lines you need. | Press **Translate** below any transcript. |
+| Reply suggestions | Creates natural replies in the target language, with Turkish meaning and a Turkish-readable pronunciation line. | Press **Suggest reply** on an incoming line, then choose one of the reply cards. |
+| Reading mode | Shows one pronunciation at a large, distraction-free size and can read the native sentence aloud. | Open **Reading mode** from a reply; use `1`–`4` to open visible choices and `Esc` to close. |
+| Quick phrases and saved replies | Opens useful phrases immediately without an AI request and keeps reusable replies locally. | Choose a quick phrase or save a generated reply to your phrase collection. |
+| Speak or type your own reply | Translates a response you compose yourself instead of relying on suggestions. | Expand **Write or say your own reply**, then type or use push-to-talk. |
+| Conversation tools | Searches the visible session and full history, edits transcript text, creates a summary, and answers questions about the conversation. | Use the search and conversation tools around the transcript panel. |
+| Export | Saves the conversation for later review. | Select `TXT` or `SRT`, then press **Download**. |
+| Speaker diarization | Attempts to separate and rename different speakers. | Enable it in **Settings** and provide the optional Hugging Face access required by pyannote. |
+| Game Mode | Opens a compact always-on-top translation overlay and applies a temporary, faster dialogue capture profile to system audio. | Press **Game Mode**, start system-audio listening normally, position the overlay, then lock it over the game. |
+
+## Typical workflows
+
+### Follow a live call or video
+
+1. Choose **System audio** for a call, stream, or video; choose **Microphone** for nearby speech.
+2. Select the expected spoken language, or automatic detection where appropriate.
+3. Enable continuous translation only when you want every incoming line translated.
+4. Start listening. A muted partial preview may appear first; the final transcript replaces it after the utterance is complete.
+5. Search, correct, summarize, ask about, or export the resulting conversation when needed.
+
+### Reply in a language you do not speak
+
+1. Press **Suggest reply** below the relevant incoming sentence.
+2. Pick a response by meaning and tone.
+3. Read the Turkish-friendly pronunciation line aloud, or open **Reading mode** for a larger display.
+4. Use **Listen** or **Listen slowly** to hear the native sentence. Save useful replies, and mark one as said so later suggestions can avoid repeating it.
+
+### Translate only selected lines
+
+Automatic translation is optional. Keep it disabled when you want a clean transcript, then press **Translate** below an individual line. Manual translation still works even when continuous incoming translation is off.
+
+### Use Game Mode
+
+Game Mode is intended for dialogue-heavy games played in windowed or borderless-windowed mode. It does not capture the screen, inject into a game, or start listening by itself.
+
+1. Press **Game Mode** in the main header. This opens the overlay and enables a temporary system-audio profile tuned for shorter dialogue gaps.
+2. Select **System audio**, enable translation, and press the normal start-listening control.
+3. Drag and resize the overlay. Open **Appearance** to adjust font size, background opacity, and whether the original sentence is shown.
+4. Press **Lock to game** or `Ctrl+Shift+L`. The overlay becomes click-through and keeps only the translation visible.
+5. Use `Ctrl+Shift+O` to show or hide the overlay. Return to the main window to disable Game Mode.
+
+![Whisper Pro Game Mode with a translated line](docs/media/whisper-pro-game-mode.png)
+
+![Game Mode appearance controls](docs/media/whisper-pro-game-mode-settings.png)
+
+Both Game Mode screenshots come from the real overlay renderer with offline synthetic dialogue and an English presentation layer.
+
+Exclusive fullscreen and some anti-cheat systems can prevent desktop overlays from appearing. Borderless-windowed mode is recommended. Game Mode changes neither the selected model nor the normal microphone and push-to-talk settings; its temporary audio profile applies only to system-audio capture.
+
+For every control and limitation, read the [complete usage guide](docs/USAGE.md).
+
 ## Requirements
 
 Whisper Pro currently targets 64-bit Windows. Install Git, Node.js/npm, and a compatible 64-bit Python. You also need a microphone or loopback-capable audio device and storage for Python packages and downloaded models.
@@ -47,8 +103,6 @@ Copy-Item .env.example .env
 notepad .env
 npm start
 ```
-
-npm start
 
 See [Installation](docs/INSTALLATION.md), [Usage](docs/USAGE.md), [Architecture](docs/ARCHITECTURE.md), [Troubleshooting](docs/TROUBLESHOOTING.md), and the [public release checklist](PUBLIC_RELEASE_CHECKLIST.md).
 

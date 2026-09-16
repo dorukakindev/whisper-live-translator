@@ -12,7 +12,8 @@
         "build": "node build.js",
         "scan": "node build.js --scan-source",
         "audit:history": "node scripts/audit-git-history.js",
-        "demo:media": "electron scripts/generate-public-demo.js"
+        "demo:media": "electron scripts/generate-public-demo.js",
+        "demo:game-media": "electron scripts/generate-public-game-demo.js"
     },
     "dependencies": {
         "electron-store": "^8.2.0"
