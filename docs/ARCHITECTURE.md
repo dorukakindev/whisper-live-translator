@@ -41,6 +41,8 @@ A monotonic session identifier prevents workers from an earlier start/stop cycle
 
 ## AI reply flow
 
+The reply endpoint can route through the official Anthropic Messages API or official OpenAI Chat Completions API. Provider credentials and model selections are isolated; translation may independently use Anthropic, OpenAI, a compatible reseller, or DeepL.
+
 The reply endpoint creates multiple styles in parallel. Partial Socket.IO events can show completed options before the final HTTP response returns. Results are merged, parsed, salvaged when possible, and deduplicated.
 
 The primary use case is read-aloud communication: each suggestion can contain native text, Turkish meaning, and a Turkish-readable pronunciation. Language-specific pronunciation rules are applied only for the selected target language.

@@ -11,8 +11,9 @@ Whisper Pro combines local speech recognition with optional cloud translation an
    - **Microphone** for speech reaching the selected input device.
 4. Choose the expected spoken language. Automatic detection is convenient, but selecting a known language can improve stability.
 5. Choose a Whisper model appropriate for the computer. Larger models can be more accurate but require more memory and processing time.
-6. If translation is needed, choose the provider and target language. Configure credentials only in the local environment or settings flow described in [Installation](INSTALLATION.md).
-7. Start listening and confirm that the status bar reports an active source and model.
+6. Choose **Claude (Anthropic)** or **OpenAI (Official)** for reply suggestions and pronunciation. Enter only that provider's key; Claude is listed first, while an existing OpenAI setup remains selected.
+7. If translation is needed, choose Claude, OpenAI, a compatible reseller, or DeepL and set the target language. Configure credentials only in the local environment or settings flow described in [Installation](INSTALLATION.md).
+8. Start listening and confirm that the status bar reports an active source and model.
 
 The first use of a model may require a download. Do not close the application while that download is in progress.
 

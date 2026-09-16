@@ -88,7 +88,7 @@ For every control and limitation, read the [complete usage guide](docs/USAGE.md)
 
 Whisper Pro currently targets 64-bit Windows. Install Git, Node.js/npm, and a compatible 64-bit Python. You also need a microphone or loopback-capable audio device and storage for Python packages and downloaded models.
 
-An OpenAI API key is needed only for AI replies or OpenAI translation. DeepL and pyannote features use separate optional credentials. CPU transcription is supported; a compatible NVIDIA GPU can improve speed substantially.
+Choose Claude (Anthropic) or OpenAI for AI replies and pronunciation; both can also power translation. DeepL remains an optional translation-only provider, and pyannote uses a separate optional credential. CPU transcription is supported; a compatible NVIDIA GPU can improve speed substantially.
 
 ## Quick start
 
@@ -110,7 +110,10 @@ See [Installation](docs/INSTALLATION.md), [Usage](docs/USAGE.md), [Architecture]
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | For AI features | Reply suggestions and OpenAI translation |
+| `ANTHROPIC_API_KEY` | For Claude features | Claude replies, pronunciation, and translation |
+| `ANTHROPIC_MODEL` | No | Claude translation model override |
+| `ANTHROPIC_RESPONSE_MODEL` | No | Claude reply-suggestion model override |
+| `OPENAI_API_KEY` | For OpenAI features | OpenAI replies, pronunciation, and translation |
 | `OPENAI_MODEL` | No | Translation model override |
 | `OPENAI_RESPONSE_MODEL` | No | Reply-suggestion model override |
 | `DEEPL_API_KEY` | No | Optional DeepL translation |
@@ -121,7 +124,7 @@ Keep `HOST=127.0.0.1`. The app is designed as a local desktop service and is not
 
 ## Data and privacy
 
-Audio transcription runs locally. Depending on enabled features, transcript text may be sent to OpenAI, DeepL, or a user-selected compatible provider. Local transcripts and speaker profiles are ignored by Git, but remain on the computer until removed. Read [Privacy and data flow](docs/PRIVACY.md) before processing sensitive conversations.
+Audio transcription runs locally. Depending on enabled features, transcript text may be sent to Anthropic, OpenAI, DeepL, or a user-selected compatible provider. Local transcripts and speaker profiles are ignored by Git, but remain on the computer until removed. Read [Privacy and data flow](docs/PRIVACY.md) before processing sensitive conversations.
 
 ## Development and validation
 

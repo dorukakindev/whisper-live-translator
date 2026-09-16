@@ -29,7 +29,7 @@ Try a smaller model, close GPU-heavy applications, confirm whether logs report C
 
 ## AI reply, translation, or diarization fails
 
-Confirm the correct provider credential, restart after `.env` changes, and check provider quota/model/network status. OpenAI, DeepL, reseller, and Hugging Face credentials are not interchangeable. Disable diarization to isolate core transcription.
+Confirm the correct provider credential, restart after `.env` changes, and check provider quota/model/network status. Anthropic, OpenAI, DeepL, reseller, and Hugging Face credentials are not interchangeable. For Claude, confirm that **Claude (Anthropic)** and an active Claude model are selected; for OpenAI, select **OpenAI (Official)**. Disable diarization to isolate core transcription.
 
 ## Port 5000 is busy
 

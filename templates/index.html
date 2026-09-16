@@ -1883,6 +1883,7 @@
                     <div class="deepl-settings-panel" id="deeplSettingsPanel">
                         <select class="language-select" id="translationProvider" onchange="changeTranslationProvider()"
                             style="margin-bottom: 10px;">
+                            <option value="anthropic">Claude (Anthropic)</option>
                             <option value="deepl">DeepL</option>
                             <option value="openai_reseller">OpenAI (Reseller)</option>
                             <option value="openai_official">OpenAI (Resmi)</option>
@@ -2198,16 +2199,29 @@
                 <div class="settings-panel">
                     <h4>Sistem ve AI Ayarları</h4>
                     
-                    <!-- OpenAI API ve Model Ayarları -->
+                    <!-- Anthropic ve OpenAI API ve Model Ayarları -->
                     <div style="margin-bottom: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px;">
                         <div class="setting-item">
-                            <label for="openaiApiKeyAI" style="font-weight: bold; color: var(--text-main);">Resmi OpenAI API Key</label>
+                            <label for="aiProviderSelect" style="font-weight: bold; color: var(--text-main);">AI Sağlayıcısı</label>
+                            <select id="aiProviderSelect" onchange="changeAIProvider()" style="margin-top: 4px;">
+                                <option value="anthropic">Claude (Anthropic)</option>
+                                <option value="openai_official" selected>OpenAI (Resmi)</option>
+                            </select>
+                        </div>
+                        <div class="setting-item">
+                            <label for="openaiApiKeyAI" id="aiApiKeyLabel" style="font-weight: bold; color: var(--text-main);">Resmi OpenAI API Key</label>
                             <input type="password" id="openaiApiKeyAI" placeholder="sk-..." style="margin-top: 4px;">
                         </div>
 
                         <div class="setting-item">
                             <label for="aiTranslationModelSelect" style="font-weight: bold; color: var(--text-main);">AI Çeviri Modeli</label>
                             <select id="aiTranslationModelSelect" onchange="changeAITranslationModel()" style="margin-top: 4px;">
+                                <optgroup label="--- Claude (Anthropic) ---">
+                                    <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 - Fast</option>
+                                    <option value="claude-sonnet-4-6">Claude Sonnet 4.6 - Balanced</option>
+                                    <option value="claude-sonnet-5">Claude Sonnet 5 - Advanced</option>
+                                    <option value="claude-opus-5">Claude Opus 5 - Advanced</option>
+                                </optgroup>
                                 <optgroup label="--- Mini & Nano (Limit: 2.5M Token/Gün) ---">
                                     <option value="gpt-5.4-mini">gpt-5.4-mini - Dengeli + Hızlı (akıl yürütme)</option>
                                     <option value="gpt-5.4-nano">gpt-5.4-nano - En Hızlı + En Tasarruflu</option>
@@ -2241,6 +2255,12 @@
                         <div class="setting-item">
                             <label for="aiModelSelect" style="font-weight: bold; color: var(--text-main);">AI Cevap & Okunuş Modeli</label>
                             <select id="aiModelSelect" onchange="changeAIModel()" style="margin-top: 4px;">
+                                <optgroup label="--- Claude (Anthropic) ---">
+                                    <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 - Fast</option>
+                                    <option value="claude-sonnet-4-6">Claude Sonnet 4.6 - Balanced</option>
+                                    <option value="claude-sonnet-5">Claude Sonnet 5 - Advanced</option>
+                                    <option value="claude-opus-5">Claude Opus 5 - Advanced</option>
+                                </optgroup>
                                 <optgroup label="--- Mini & Nano (Limit: 2.5M Token/Gün) ---">
                                     <option value="gpt-5.4-mini">gpt-5.4-mini - Dengeli + Hızlı (akıl yürütme)</option>
                                     <option value="gpt-5.4-nano">gpt-5.4-nano - En Hızlı + En Tasarruflu</option>
@@ -2551,7 +2571,7 @@
             if (document.body.classList.contains('controls-collapsed')) toggleControlPanel();
             const target = targetName === 'model' ? document.getElementById('modelLoadBtn')
                 : targetName === 'device' ? document.getElementById('deviceSelect')
-                : targetName === 'ai' ? document.getElementById('openaiApiKeyAI')
+                : targetName === 'ai' ? document.getElementById('aiProviderSelect')
                 : document.getElementById('startBtn');
             target?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
             if (targetName === 'start' && target && !target.disabled) target.click();
@@ -3011,6 +3031,7 @@
         // DeepL API Key kaydet
         function getTranslationKeyStorageKey(provider = translationSettings.provider) {
             if (provider === 'deepl') return 'deeplApiKey';
+            if (provider === 'anthropic') return 'anthropicTranslationApiKey';
             if (provider === 'openai_official') return 'openaiOfficialTranslationApiKey';
             return 'openaiResellerTranslationApiKey';
         }
@@ -3045,7 +3066,7 @@
 
         // Çeviri ayarlarını yükle
         function loadTranslationSettings() {
-            const allowedProviders = ['deepl', 'openai_reseller', 'openai_official'];
+            const allowedProviders = ['anthropic', 'deepl', 'openai_reseller', 'openai_official'];
             let savedProvider = whisperStorage.getItem('translationProvider') || 'deepl';
             if (savedProvider === 'openai') savedProvider = 'openai_reseller';
             if (!allowedProviders.includes(savedProvider)) savedProvider = 'deepl';
@@ -3093,14 +3114,17 @@
             const deeplInput = document.getElementById('deeplApiKey');
             const deeplHelpLink = document.getElementById('deeplHelpLink');
             const openaiHint = document.getElementById('openaiTranslationHint');
+            syncAITranslationModelOptions();
 
-            if (provider === 'openai_reseller' || provider === 'openai_official') {
+            if (provider === 'anthropic' || provider === 'openai_reseller' || provider === 'openai_official') {
                 deeplInput.style.display = 'block';
-                deeplInput.placeholder = provider === 'openai_official'
-                    ? 'Resmi OpenAI API Key (sk-...)'
-                    : 'Reseller OpenAI API Key';
+                deeplInput.placeholder = provider === 'anthropic'
+                    ? 'Anthropic API Key (sk-ant-...)'
+                    : provider === 'openai_official'
+                        ? 'Resmi OpenAI API Key (sk-...)'
+                        : 'Reseller OpenAI API Key';
                 deeplHelpLink.style.display = 'none';
-                openaiHint.style.display = 'block';
+                openaiHint.style.display = provider === 'anthropic' ? 'none' : 'block';
             } else {
                 deeplInput.style.display = 'block';
                 deeplInput.placeholder = 'DeepL API Key (xxxxx-xxxxx-xxxxx:fx)';
@@ -3162,6 +3186,8 @@
                 if (translationSettings.provider === 'deepl' && !translationSettings.apiKey) {
                     updateTranslationStatus('Lütfen DeepL API key girin', 'warning');
                     document.getElementById('deeplApiKey').focus();
+                } else if (translationSettings.provider === 'anthropic') {
+                    updateTranslationStatus('Claude çeviri aktif', 'success');
                 } else if (translationSettings.provider === 'openai_reseller' || translationSettings.provider === 'openai_official') {
                     updateTranslationStatus('OpenAI çeviri aktif', 'success');
                 } else {
@@ -4697,7 +4723,8 @@
         // AI Response Functions
         function changeAIModel() {
             const modelId = document.getElementById('aiModelSelect').value;
-            whisperStorage.setItem('aiResponseModel', modelId);
+            whisperStorage.setItem(document.getElementById('aiProviderSelect').value === 'anthropic'
+                ? 'anthropicResponseModel' : 'aiResponseModel', modelId);
 
             fetch('/api/ai_response_model', {
                 method: 'POST',
@@ -4718,9 +4745,30 @@
                 });
         }
 
+        function syncAITranslationModelOptions() {
+            const select = document.getElementById('aiTranslationModelSelect');
+            if (!select) return;
+            const wantClaude = translationSettings.provider === 'anthropic';
+            for (const group of select.querySelectorAll('optgroup')) {
+                const isClaude = group.label.includes('Claude');
+                group.disabled = wantClaude !== isClaude;
+                group.hidden = wantClaude !== isClaude;
+            }
+            const storageKey = wantClaude ? 'anthropicTranslationModel' : 'aiTranslationModel';
+            const savedModel = whisperStorage.getItem(storageKey);
+            const choices = Array.from(select.options).filter(option =>
+                option.closest('optgroup')?.label.includes('Claude') === wantClaude);
+            select.value = choices.some(option => option.value === savedModel)
+                ? savedModel : choices[0].value;
+            fetch('/api/ai_translation_model', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: select.value })
+            }).catch(err => console.error('AI translation model provider sync error:', err));
+        }
         function changeAITranslationModel() {
             const modelId = document.getElementById('aiTranslationModelSelect').value;
-            whisperStorage.setItem('aiTranslationModel', modelId);
+            whisperStorage.setItem(translationSettings.provider === 'anthropic'
+                ? 'anthropicTranslationModel' : 'aiTranslationModel', modelId);
 
             fetch('/api/ai_translation_model', {
                 method: 'POST',
@@ -4741,64 +4789,108 @@
                 });
         }
 
-        function saveAIConfig() {
-            const openaiKey = document.getElementById('openaiApiKeyAI').value;
-
-            if (!openaiKey.trim()) {
-                showAlert('OpenAI API Key gerekli', 'error');
-                return;
-            }
-
-            fetch('/api/ai_response_config', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ openai_key: openaiKey })
-            })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        whisperStorage.setItem('openaiOfficialResponseApiKey', openaiKey);
-                        document.getElementById('aiResponseStatus').textContent = 'OpenAI API anahtari kaydedildi';
-                        document.getElementById('aiResponseStatus').style.background = 'rgba(16, 185, 129, 0.3)';
-                        showAlert('API anahtari kaydedildi', 'success');
-                    } else {
-                        document.getElementById('aiResponseStatus').textContent = 'API hatasi: ' + (data.error || 'Bilinmeyen hata');
-                        document.getElementById('aiResponseStatus').style.background = 'rgba(239, 68, 68, 0.3)';
-                        showAlert(data.error || 'API hatasi', 'error');
-                    }
-                })
-                .catch(err => {
-                    showAlert('Baglanti hatasi', 'error');
-                    console.error('API config error:', err);
-                });
+        function aiKeyStorageKey(provider) {
+            return provider === 'anthropic'
+                ? 'anthropicResponseApiKey' : 'openaiOfficialResponseApiKey';
         }
 
-        // Kaydedilen OpenAI anahtarini ve AI modelini acilista geri yukle. Backend
-        // bunlari bellekte tuttugu icin her baslatmada geri gonderilmeli; anahtar
-        // alani da doldurulur ki tekrar elle girmeye gerek kalmasin.
-        function loadAIConfig() {
-            const savedKey = whisperStorage.getItem('openaiOfficialResponseApiKey');
+        function changeAIProvider() {
+            const provider = document.getElementById('aiProviderSelect').value;
+            whisperStorage.setItem('aiResponseProvider', provider);
+            document.getElementById('aiApiKeyLabel').textContent = provider === 'anthropic'
+                ? 'Anthropic API Key' : 'Resmi OpenAI API Key';
+            document.getElementById('openaiApiKeyAI').placeholder = provider === 'anthropic'
+                ? 'sk-ant-...' : 'sk-...';
+            document.getElementById('openaiApiKeyAI').value =
+                whisperStorage.getItem(aiKeyStorageKey(provider)) || '';
+            for (const id of ['aiModelSelect']) {
+                const select = document.getElementById(id);
+                const wantClaude = provider === 'anthropic';
+                for (const group of select.querySelectorAll('optgroup')) {
+                    const isClaude = group.label.includes('Claude');
+                    group.disabled = wantClaude !== isClaude;
+                    group.hidden = wantClaude !== isClaude;
+                }
+                const storageKey = id === 'aiModelSelect'
+                    ? (wantClaude ? 'anthropicResponseModel' : 'aiResponseModel')
+                    : (wantClaude ? 'anthropicTranslationModel' : 'aiTranslationModel');
+                const savedModel = whisperStorage.getItem(storageKey);
+                const choices = Array.from(select.options).filter(option =>
+                    option.closest('optgroup')?.label.includes('Claude') === wantClaude);
+                select.value = choices.some(option => option.value === savedModel)
+                    ? savedModel : choices[0].value;
+                const endpoint = id === 'aiModelSelect'
+                    ? '/api/ai_response_model' : '/api/ai_translation_model';
+                fetch(endpoint, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: select.value })
+                }).catch(err => console.error('AI model provider sync error:', err));
+            }
+            return fetch('/api/ai_provider', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider })
+            }).catch(err => console.error('AI provider sync error:', err));
+        }
+
+        function saveAIConfig() {
+            const provider = document.getElementById('aiProviderSelect').value;
+            const apiKey = document.getElementById('openaiApiKeyAI').value.trim();
+            const label = provider === 'anthropic' ? 'Anthropic' : 'OpenAI';
+            if (!apiKey) {
+                showAlert(label + ' API Key gerekli', 'error');
+                return;
+            }
+            fetch('/api/ai_response_config', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, api_key: apiKey })
+            }).then(r => r.json()).then(data => {
+                const status = document.getElementById('aiResponseStatus');
+                if (data.success) {
+                    whisperStorage.setItem(aiKeyStorageKey(provider), apiKey);
+                    status.textContent = label + ' API anahtarı kaydedildi';
+                    status.style.background = 'rgba(16, 185, 129, 0.3)';
+                    showAlert('API anahtarı kaydedildi', 'success');
+                } else {
+                    status.textContent = 'API hatası: ' + (data.error || 'Bilinmeyen hata');
+                    status.style.background = 'rgba(239, 68, 68, 0.3)';
+                    showAlert(data.error || 'API hatası', 'error');
+                }
+            }).catch(err => {
+                showAlert('Bağlantı hatası', 'error');
+                console.error('API config error:', err);
+            });
+        }
+
+        async function loadAIConfig() {
+            let provider = whisperStorage.getItem('aiResponseProvider');
+            if (!provider) {
+                try {
+                    const status = await fetch('/api/status').then(r => r.json());
+                    provider = status.ai_provider || 'openai_official';
+                } catch (_) { provider = 'openai_official'; }
+            }
+            document.getElementById('aiProviderSelect').value =
+                provider === 'openai_official' ? provider : 'anthropic';
+            changeAIProvider();
+            const selectedProvider = document.getElementById('aiProviderSelect').value;
+            const savedKey = whisperStorage.getItem(aiKeyStorageKey(selectedProvider));
             if (savedKey) {
                 const field = document.getElementById('openaiApiKeyAI');
-                if (field) field.value = savedKey;
-
+                field.value = savedKey;
                 const status = document.getElementById('aiResponseStatus');
                 fetch('/api/ai_response_config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ openai_key: savedKey })
-                })
-                    .then(r => r.json())
-                    .then(data => {
-                        if (data.success && status) {
-                            status.textContent = 'OpenAI API anahtari yuklendi';
-                            status.style.background = 'rgba(16, 185, 129, 0.3)';
-                        }
-                    })
-                    .catch(err => console.error('AI config autoload error:', err));
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider: selectedProvider, api_key: savedKey })
+                }).then(r => r.json()).then(data => {
+                    if (data.success && status) {
+                        status.textContent = (selectedProvider === 'anthropic' ? 'Anthropic' : 'OpenAI')
+                            + ' API anahtarı yüklendi';
+                        status.style.background = 'rgba(16, 185, 129, 0.3)';
+                    }
+                }).catch(err => console.error('AI config autoload error:', err));
             }
-
-            const savedModel = whisperStorage.getItem('aiResponseModel');
+            const savedModel = whisperStorage.getItem(selectedProvider === 'anthropic'
+                ? 'anthropicResponseModel' : 'aiResponseModel');
             if (savedModel) {
                 const sel = document.getElementById('aiModelSelect');
                 if (sel) {
@@ -4819,7 +4911,8 @@
                 }
             }
 
-            const savedTranslationModel = whisperStorage.getItem('aiTranslationModel');
+            const savedTranslationModel = whisperStorage.getItem(translationSettings.provider === 'anthropic'
+                ? 'anthropicTranslationModel' : 'aiTranslationModel');
             if (savedTranslationModel) {
                 const sel = document.getElementById('aiTranslationModelSelect');
                 if (sel) {

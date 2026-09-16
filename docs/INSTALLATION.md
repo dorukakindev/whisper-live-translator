@@ -20,6 +20,8 @@ notepad .env
 
 If Python 3.12 is unavailable, use another compatible interpreter. Recreate the virtual environment after moving to a new Windows installation; do not copy an old `.venv`.
 
+Claude support uses the official Anthropic API. Set `ANTHROPIC_API_KEY` in `.env`, or select **Claude (Anthropic)** under **AI provider** and enter the key in the local settings panel. OpenAI remains available separately; the two credentials are never forwarded to each other.
+
 Add only credentials for features you use. Never paste credentials into Git commands, remote URLs, documentation, issues, logs, or screenshots. Leave `HOST=127.0.0.1`.
 
 ## Validate native imports

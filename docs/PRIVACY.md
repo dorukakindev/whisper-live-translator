@@ -10,7 +10,7 @@ Git ignores `.env`, `transcriptions.txt`, rotated transcripts, logs, and `speake
 
 ## Optional cloud processing
 
-When enabled, transcript text may be sent to OpenAI for replies or translation, DeepL for translation, or an explicitly selected compatible provider. Provider retention, regional processing, and account terms are controlled by current provider policies and user configuration.
+When enabled, transcript text may be sent to Anthropic or OpenAI for replies, pronunciation, or translation; to DeepL for translation; or to an explicitly selected compatible provider. No cloud provider is contacted for local transcription itself. Provider retention, regional processing, and account terms are controlled by current provider policies and user configuration.
 
 Hugging Face credentials are used to obtain optional diarization model artifacts. Diarization inference is intended to run locally after model loading, subject to installed third-party behavior.
 

@@ -1341,8 +1341,11 @@ def validate_input(schema):
         return wrapper
     return decorator
 
-# OpenAI AI Responder Class
+# OpenAI ve Anthropic AI Responder Class
 _DEFAULT_OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
+_ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
+_ANTHROPIC_MODELS_URL = "https://api.anthropic.com/v1/models"
+_ANTHROPIC_VERSION = "2023-06-01"
 
 
 def _normalize_openai_chat_url(value):
@@ -1376,7 +1379,7 @@ def _normalize_openai_chat_url(value):
 
 
 class OpenAIResponder:
-    """OpenAI Chat Completions API ile AI cevap uretme.
+    """OpenAI Chat Completions veya Anthropic Messages ile AI cevap uretme.
 
     Varsayilan gpt-4.1-mini: canli testte (Japonca cevap gorevi) en iyi hiz/kalite
     dengesi -> hizli (~2.8sn), okunusta %0 Turkce sizinti, reasoning token YOK
@@ -1384,10 +1387,16 @@ class OpenAIResponder:
     """
 
     DEFAULT_MODEL = "gpt-4.1-mini"
+    DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
 
     def __init__(self):
         self.enabled = False
         self.api_key = None
+        self.response_provider = "openai_official"
+        self.anthropic_api_key = None
+        self.anthropic_model = self.DEFAULT_ANTHROPIC_MODEL
+        self.anthropic_response_model = self.DEFAULT_ANTHROPIC_MODEL
+        self._anthropic_api_key_status = 'missing'
         # Ana cevap/okunus anahtari sadece resmi OpenAI endpoint'ine gider.
         # OPENAI_BASE_URL yalniz ayri anahtar isteyen reseller cevirisi icindir.
         self.base_url = _DEFAULT_OPENAI_CHAT_URL
@@ -1402,6 +1411,7 @@ class OpenAIResponder:
         self.translation_provider = "openai_reseller"
         self.translation_api_key = None
         self.translation_api_keys = {
+            "anthropic": None,
             "openai_reseller": None,
             "openai_official": None,
         }
@@ -1442,6 +1452,12 @@ class OpenAIResponder:
             "o4-mini": "o4-mini",
             "codex-mini-latest": "codex-mini-latest"
         }
+        self.allowed_anthropic_models = {
+            "claude-haiku-4-5-20251001": "claude-haiku-4-5-20251001",
+            "claude-sonnet-4-6": "claude-sonnet-4-6",
+            "claude-sonnet-5": "claude-sonnet-5",
+            "claude-opus-5": "claude-opus-5",
+        }
         # Eski UI degerleri default modele dusurulur
         self._legacy_aliases = {
             "minimax/MiniMax-M2.7",
@@ -1476,8 +1492,32 @@ class OpenAIResponder:
                 "OPENAI_RESPONSE_MODEL desteklenmiyor; varsayilan model kullaniliyor"
             )
 
+        configured_anthropic_model = os.environ.get(
+            "ANTHROPIC_MODEL", self.DEFAULT_ANTHROPIC_MODEL
+        ).strip()
+        self.set_model(configured_anthropic_model)
+        configured_anthropic_response_model = os.environ.get(
+            "ANTHROPIC_RESPONSE_MODEL", configured_anthropic_model
+        ).strip()
+        self.set_response_model(configured_anthropic_response_model)
+
+    def set_response_provider(self, provider):
+        """Cevap/okunus uretiminde kullanilacak resmi AI saglayicisini sec."""
+        normalized = str(provider or '').strip().lower()
+        if normalized not in {'anthropic', 'openai_official'}:
+            return False
+        with self._config_lock:
+            self.response_provider = normalized
+        return True
+
     def set_model(self, model_id):
         """Secili AI modelini ayarla (Translation model)"""
+        anthropic_model = self.allowed_anthropic_models.get(model_id)
+        if anthropic_model:
+            with self._config_lock:
+                self.anthropic_model = anthropic_model
+            logger.info(f"Anthropic ceviri modeli degistirildi: {anthropic_model}")
+            return True
         if model_id in self._legacy_aliases:
             with self._config_lock:
                 self.model = self.DEFAULT_MODEL
@@ -1496,6 +1536,12 @@ class OpenAIResponder:
 
     def set_response_model(self, model_id):
         """Secili cevap/okunus AI modelini ayarla (Response model)"""
+        anthropic_model = self.allowed_anthropic_models.get(model_id)
+        if anthropic_model:
+            with self._config_lock:
+                self.anthropic_response_model = anthropic_model
+            logger.info(f"Anthropic cevap modeli degistirildi: {anthropic_model}")
+            return True
         if model_id in self._legacy_aliases:
             model_id = self.DEFAULT_MODEL
         normalized_model = self.allowed_models.get(model_id)
@@ -1508,152 +1554,152 @@ class OpenAIResponder:
         logger.info(f"Cevap AI modeli degistirildi: {self.response_model}")
         return True
 
-    def set_api_key(self, api_key):
-        """API anahtarini ayarla"""
+    def set_api_key(self, api_key, provider="openai_official"):
+        """Cevap/okunus saglayicisinin anahtarini ayarla ve baglantiyi dogrula."""
+        normalized_provider = str(provider or '').strip().lower()
+        if normalized_provider not in {'anthropic', 'openai_official'}:
+            return False
         try:
             normalized_key = str(api_key or "").strip() or None
             with self._config_lock:
-                self.api_key = normalized_key
-                self._api_key_status = 'checking' if normalized_key else 'missing'
-                if self._verified_api_key != normalized_key:
-                    self._verified_api_key = None
-            return self.test_connection()
-        except Exception as e:
-            logger.error(f"OpenAI API anahtari ayarlanirken hata: {e}")
+                self.response_provider = normalized_provider
+                if normalized_provider == 'anthropic':
+                    self.anthropic_api_key = normalized_key
+                    self._anthropic_api_key_status = 'checking' if normalized_key else 'missing'
+                else:
+                    self.api_key = normalized_key
+                    self._api_key_status = 'checking' if normalized_key else 'missing'
+                    if self._verified_api_key != normalized_key:
+                        self._verified_api_key = None
+            return self.test_connection(normalized_provider)
+        except Exception as exc:
+            logger.error(f"AI API anahtari ayarlanirken hata: {exc}")
             return False
 
     def configure_translation(self, provider, api_key=None):
-        """Çeviri çağrıları için sağlayıcı, endpoint ve anahtarı ayarla."""
+        """Ceviri cagrilari icin saglayici, endpoint ve anahtari ayarla."""
         provider = str(provider or "openai_reseller").strip().lower()
         if provider in {"openai", "reseller"}:
             provider = "openai_reseller"
-        if provider not in {"openai_reseller", "openai_official"}:
+        if provider not in {"anthropic", "openai_reseller", "openai_official"}:
             return False
 
         normalized_key = str(api_key or "").strip() or None
         with self._config_lock:
             self.translation_provider = provider
             self.translation_api_keys[provider] = normalized_key
-            # Eski kod/diagnostiklerle uyumluluk: aktif sağlayıcının anahtarı.
             self.translation_api_key = normalized_key
             self.translation_base_url = (
-                _DEFAULT_OPENAI_CHAT_URL
-                if provider == "openai_official"
+                _ANTHROPIC_MESSAGES_URL if provider == 'anthropic'
+                else _DEFAULT_OPENAI_CHAT_URL if provider == "openai_official"
                 else self.reseller_base_url
             )
         return True
 
     def translation_is_configured(self, provider=None):
-        """Seçili OpenAI çeviri sağlayıcısının kullanılabilir olup olmadığını döndür."""
+        """Secili AI ceviri saglayicisinin kullanilabilir olup olmadigini dondur."""
         with self._config_lock:
             selected = str(provider or self.translation_provider).strip().lower()
             if selected == "openai":
                 selected = "openai_reseller"
-            key = self.translation_api_keys.get(selected)
-            return bool(key)
+            return bool(self.translation_api_keys.get(selected))
 
     def snapshot_translation_request(self, provider=None):
-        """Kuyruga giren ceviri icin URL+anahtar+modeli degismez olarak yakala."""
+        """Kuyruga giren ceviri icin saglayici ayarlarini degismez yakala."""
         with self._config_lock:
             selected = str(provider or self.translation_provider).strip().lower()
             if selected in {"openai", "reseller"}:
                 selected = "openai_reseller"
-            if selected not in {"openai_reseller", "openai_official"}:
+            if selected not in {"anthropic", "openai_reseller", "openai_official"}:
                 return None
-            key = self.translation_api_keys.get(selected)
             return {
                 "provider": selected,
-                "api_key": key,
+                "api_key": self.translation_api_keys.get(selected),
                 "url": (
-                    _DEFAULT_OPENAI_CHAT_URL
-                    if selected == "openai_official"
+                    _ANTHROPIC_MESSAGES_URL if selected == 'anthropic'
+                    else _DEFAULT_OPENAI_CHAT_URL if selected == "openai_official"
                     else self.reseller_base_url
                 ),
-                "model": self.model,
+                "model": self.anthropic_model if selected == 'anthropic' else self.model,
                 "cheap_mode": self.cheap_mode,
             }
 
-    def test_connection(self):
-        """API baglantisini test et"""
-        # UI yukleme/reconnect akislarinda ayni anahtar tekrar tekrar gonderilebilir.
-        # Tek kilit hem eszamanli iki test istegini birlestirir hem dogrulanmis ayni
-        # anahtarin yeniden API maliyeti/timeout odemesini onler.
+    def test_connection(self, provider=None):
+        """Secili resmi AI saglayicisinin anahtarini dusuk maliyetli olarak test et."""
+        selected = str(provider or self.response_provider).strip().lower()
+        if selected not in {'anthropic', 'openai_official'}:
+            return False
         with self._connection_test_lock:
             with self._config_lock:
-                request_key = self.api_key
-                request_url = self.base_url
-                request_model = self.model
-                if request_key and self._verified_api_key == request_key:
-                    return True
+                if selected == 'anthropic':
+                    request_key = self.anthropic_api_key
+                    status_attr = '_anthropic_api_key_status'
+                else:
+                    request_key = self.api_key
+                    status_attr = '_api_key_status'
+                    if request_key and self._verified_api_key == request_key:
+                        return True
             if not request_key:
                 with self._config_lock:
-                    self._api_key_status = 'missing'
+                    setattr(self, status_attr, 'missing')
                 return False
-
             try:
-                payload = {
-                    "model": request_model,
-                    "messages": [{"role": "user", "content": "Merhaba"}],
-                    "max_completion_tokens": 10,
-                    "stream": False
-                }
-
-                response = _http_session.post(
-                    request_url,
-                    headers=self._build_headers(request_key),
-                    json=payload,
-                    timeout=(5, 15)
-                )
-
-                if response.status_code == 200:
-                    with self._config_lock:
-                        if self.api_key == request_key:
-                            self._verified_api_key = request_key
-                            self._api_key_status = 'valid'
-                    logger.info("OpenAI baglanti basarili")
+                if selected == 'anthropic':
+                    response = _http_session.get(
+                        _ANTHROPIC_MODELS_URL,
+                        headers=self._build_headers(request_key, selected),
+                        params={'limit': 1}, timeout=(5, 15)
+                    )
+                else:
+                    response = _http_session.post(
+                        self.base_url,
+                        headers=self._build_headers(request_key, selected),
+                        json={
+                            "model": self.model,
+                            "messages": [{"role": "user", "content": "Merhaba"}],
+                            "max_completion_tokens": 10,
+                            "stream": False,
+                        }, timeout=(5, 15)
+                    )
+                valid = response.status_code == 200
+                with self._config_lock:
+                    setattr(self, status_attr, 'valid' if valid else 'invalid')
+                    if valid and selected == 'openai_official':
+                        self._verified_api_key = request_key
+                if valid:
+                    logger.info(f"{selected} baglanti basarili")
                     return True
-                with self._config_lock:
-                    if self.api_key == request_key:
-                        self._api_key_status = 'invalid'
-                logger.error(f"OpenAI test hatasi: HTTP {response.status_code}")
+                logger.error(f"{selected} test hatasi: HTTP {response.status_code}")
                 return False
-            except Exception as e:
+            except Exception as exc:
                 with self._config_lock:
-                    if self.api_key == request_key:
-                        self._api_key_status = 'unavailable'
-                logger.error(f"OpenAI test hatasi: {e}")
+                    setattr(self, status_attr, 'unavailable')
+                logger.error(f"{selected} test hatasi: {exc}")
                 return False
-
     def answer_question(
             self, text, context_list=None, json_mode=False, model_type="response",
             max_tokens=None, reasoning=None, translation_provider=None,
             translation_snapshot=None):
-        """Soruya OpenAI ile cevap ver.
-
-        Args:
-            text: Kullanici mesaji / prompt
-            context_list: Onceki transkriptler (opsiyonel)
-            json_mode: True ise OpenAI'nin response_format=json_object parametresi
-                       kullanilir, model garantili gecerli JSON dondurur.
-            model_type: "translation" veya "response"
-            max_tokens: max_completion_tokens degerini gecersiz kil (opsiyonel;
-                        paralel cevap cagrilari kendi kucuk limitini gecirir)
-            reasoning: reasoning_effort'u acikca belirle ("minimal"/"low"). None ise
-                       model_type'a gore secilir (ceviri -> minimal, cevap -> low).
-                       Ceviri AKIL YURUTME GEREKTIRMEZ; 'minimal' gizli reasoning
-                       token israfini ortadan kaldirir (1M token sikayetinin ana sebebi).
-        """
+        """Secili OpenAI veya Anthropic saglayicisiyla cevap uret."""
         with self._config_lock:
-            request_key = self.api_key
-            request_url = self.base_url
-            model_name = self.response_model if model_type == "response" else self.model
+            provider = self.response_provider
+            if provider == 'anthropic':
+                request_key = self.anthropic_api_key
+                request_url = _ANTHROPIC_MESSAGES_URL
+                model_name = self.anthropic_response_model
+            else:
+                request_key = self.api_key
+                request_url = self.base_url
+                model_name = self.response_model
             cheap_mode = self.cheap_mode
+
         if model_type == "translation":
             snapshot = translation_snapshot or self.snapshot_translation_request(
                 translation_provider
             )
             if not snapshot:
                 return None
+            provider = snapshot.get("provider")
             request_key = snapshot.get("api_key")
             request_url = snapshot.get("url")
             model_name = snapshot.get("model") or model_name
@@ -1668,134 +1714,149 @@ class OpenAIResponder:
                 "thinking process, or explanations unless explicitly requested."
             )
             if json_mode:
-                # OpenAI JSON mode'da prompt'ta 'json' kelimesi gecmeli
                 system_content += " Always respond with a single valid JSON object."
-
-            messages = [{"role": "system", "content": system_content}]
-
+            context_content = ""
             if context_list:
                 context_str = "\n".join(context_list[-5:])
                 if context_str.strip():
-                    messages.append({"role": "system", "content": (
-                        "Konusmanin onceki transkriptleri (eskiden yeniye, baglami anlamak icin; "
-                        "cevabini SON mesaja gore uret):\n" + context_str
-                    )})
+                    context_content = (
+                        "Konusmanin onceki transkriptleri (eskiden yeniye, baglami "
+                        "anlamak icin; cevabini SON mesaja gore uret):\n" + context_str
+                    )
 
-            messages.append({"role": "user", "content": text})
+            token_limit = max_tokens or (2200 if json_mode else 800)
+            if provider == 'anthropic':
+                anthropic_system = system_content
+                if context_content:
+                    anthropic_system += "\n" + context_content
+                payload = {
+                    "model": model_name,
+                    "system": anthropic_system,
+                    "messages": [{"role": "user", "content": text}],
+                    "max_tokens": token_limit,
+                }
+            else:
+                messages = [{"role": "system", "content": system_content}]
+                if context_content:
+                    messages.append({"role": "system", "content": context_content})
+                messages.append({"role": "user", "content": text})
+                payload = {
+                    "model": model_name,
+                    "messages": messages,
+                    "max_completion_tokens": token_limit,
+                    "stream": False,
+                }
+                if json_mode:
+                    payload["response_format"] = {"type": "json_object"}
+                effort = reasoning or ("minimal" if model_type == "translation" else "low")
+                if cheap_mode:
+                    effort = "minimal"
+                if model_name.startswith('gpt-5'):
+                    payload["reasoning_effort"] = effort
+                elif model_name.startswith(('o3', 'o4')):
+                    payload["reasoning_effort"] = "low" if effort == "minimal" else effort
 
-            payload = {
-                "model": model_name,
-                "messages": messages,
-                # Varsayilan 2200: secenekler (translation+turkish+romanized) 1200
-                # tokena sigmayabiliyor; kesilen JSON bozuk oneri olarak yansiyordu.
-                "max_completion_tokens": max_tokens or (2200 if json_mode else 800),
-                "stream": False
-            }
-            if json_mode:
-                payload["response_format"] = {"type": "json_object"}
-            # Reasoning token israfini kes: ceviri akil yurutme gerektirmez ('minimal'),
-            # kisa cevap uretimi en fazla 'low' fayda gorur. gpt-5 'minimal'i destekler;
-            # o3/o4 desteklemez -> 'low'. Desteklemeyen model 400 dondururse parametre
-            # asagidaki retry'da otomatik cikartilir. (Reasoning token'lari GORUNMEZ
-            # ama tam fiyata FATURALANIR; 1M token sikayetinin ana kaynagi budur.)
-            effort = reasoning or ("minimal" if model_type == "translation" else "low")
-            if cheap_mode:
-                effort = "minimal"  # ucuz mod: cevap dahil her sey minimal reasoning
-            if model_name.startswith('gpt-5'):
-                payload["reasoning_effort"] = effort
-            elif model_name.startswith(('o3', 'o4')):
-                payload["reasoning_effort"] = "low" if effort == "minimal" else effort
-
-            # Gecici hatalarda (ag hatasi, 429, 5xx) bir kez yeniden dene;
-            # tek seferlik aksaklik kullaniciya 'AI onerisi basarisiz' olarak yansimasin.
             response = None
             transient_retried = False
             for _ in range(3):
                 try:
                     response = _http_session.post(
                         request_url,
-                        headers=self._build_headers(request_key),
+                        headers=self._build_headers(request_key, provider),
                         json=payload,
-                        # (baglanti, okuma). Stream KAPALI oldugundan okuma zaman asimi
-                        # fiilen toplam uretim suresidir; yavas gunlerde 1500-2200 token
-                        # uretimi 30sn'yi asip istegi kesebiliyordu -> 60sn.
-                        timeout=(5, 60)
+                        timeout=(5, 60),
                     )
                 except requests.RequestException as req_err:
                     if not transient_retried:
                         transient_retried = True
-                        logger.warning(f"OpenAI istegi basarisiz, yeniden deneniyor: {req_err}")
+                        logger.warning(f"{provider} istegi basarisiz, yeniden deneniyor: {req_err}")
                         time.sleep(1.0)
                         continue
                     raise
-                if (response.status_code == 400 and 'reasoning_effort' in payload
+                if (provider != 'anthropic' and response.status_code == 400
+                        and 'reasoning_effort' in payload
                         and 'reasoning' in (response.text or '').lower()):
                     payload.pop('reasoning_effort', None)
                     logger.warning("Model reasoning_effort desteklemiyor, parametresiz yeniden deneniyor")
                     continue
                 if response.status_code in (429, 500, 502, 503, 504) and not transient_retried:
                     transient_retried = True
-                    logger.warning(f"OpenAI gecici hata {response.status_code}, yeniden deneniyor...")
+                    logger.warning(f"{provider} gecici hata {response.status_code}, yeniden deneniyor")
                     time.sleep(1.5)
                     continue
                 break
 
             if response is None or response.status_code != 200:
                 if response is not None:
-                    logger.error(f"OpenAI API hatasi: HTTP {response.status_code}")
+                    logger.error(f"{provider} API hatasi: HTTP {response.status_code}")
                 return None
 
             result = response.json()
-
-            # Token kullanimini logla: reasoning token'lari gorunmez ama faturalanir;
-            # asiri token tuketimini teshis etmek icin breakdown'i goster.
             usage = result.get('usage') or {}
-            if usage:
-                details = usage.get('completion_tokens_details') or {}
-                reasoning_tok = details.get('reasoning_tokens', 0)
-                logger.info(
-                    f"OpenAI token [{model_name} {model_type}]: "
-                    f"prompt={usage.get('prompt_tokens', 0)} "
-                    f"completion={usage.get('completion_tokens', 0)} "
-                    f"(reasoning={reasoning_tok}) "
-                    f"cached={(usage.get('prompt_tokens_details') or {}).get('cached_tokens', 0)} "
-                    f"toplam={usage.get('total_tokens', 0)}"
+            if provider == 'anthropic':
+                prompt_tokens = int(usage.get('input_tokens', 0) or 0)
+                completion_tokens = int(usage.get('output_tokens', 0) or 0)
+                reasoning_tokens = 0
+                total_tokens = prompt_tokens + completion_tokens
+            else:
+                prompt_tokens = int(usage.get('prompt_tokens', 0) or 0)
+                completion_tokens = int(usage.get('completion_tokens', 0) or 0)
+                reasoning_tokens = int(
+                    (usage.get('completion_tokens_details') or {}).get('reasoning_tokens', 0) or 0
                 )
-                # Oturum sayacina ekle ve UI'ya canli ilet (kilit: paralel cagrilarda
-                # sayim kaybini onler; snapshot kilit altinda alinir).
+                total_tokens = int(usage.get('total_tokens', 0) or 0)
+            if usage:
+                logger.info(
+                    f"AI token [{provider} {model_name} {model_type}]: "
+                    f"prompt={prompt_tokens} completion={completion_tokens} "
+                    f"reasoning={reasoning_tokens} toplam={total_tokens}"
+                )
                 with self._token_lock:
-                    self.session_tokens['prompt'] += usage.get('prompt_tokens', 0)
-                    self.session_tokens['completion'] += usage.get('completion_tokens', 0)
-                    self.session_tokens['reasoning'] += reasoning_tok
-                    self.session_tokens['total'] += usage.get('total_tokens', 0)
+                    self.session_tokens['prompt'] += prompt_tokens
+                    self.session_tokens['completion'] += completion_tokens
+                    self.session_tokens['reasoning'] += reasoning_tokens
+                    self.session_tokens['total'] += total_tokens
                     snapshot = dict(self.session_tokens)
                 try:
                     socketio.emit('ai_token_usage', snapshot)
                 except Exception:
                     pass
 
-            ai_response = self._extract_text_from_response(result)
-
+            ai_response = self._extract_text_from_response(result, provider)
             if not ai_response:
-                logger.warning(f"OpenAI bos yanit dondu: {json.dumps(result, ensure_ascii=False)[:1200]}")
+                logger.warning(f"{provider} bos yanit dondu")
                 return None
-
-            return {
-                'response': ai_response,
-                'source': 'openai'
-            }
-
-        except Exception as e:
-            logger.error(f"OpenAI cevap hatasi: {e}", exc_info=True)
+            return {'response': ai_response, 'source': provider}
+        except Exception as exc:
+            logger.error(f"{provider} cevap hatasi: {exc}", exc_info=True)
             return None
 
-    def _build_headers(self, api_key=None):
+    def _build_headers(self, api_key=None, provider='openai_official'):
+        key = api_key if api_key is not None else self.api_key
+        if provider == 'anthropic':
+            return {
+                "x-api-key": key,
+                "anthropic-version": _ANTHROPIC_VERSION,
+                "Content-Type": "application/json",
+            }
         return {
-            "Authorization": f"Bearer {api_key if api_key is not None else self.api_key}",
-            "Content-Type": "application/json"
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
         }
 
-    def _extract_text_from_response(self, response_json):
+    def _extract_text_from_response(self, response_json, provider='openai_official'):
+        if provider == 'anthropic':
+            content = response_json.get('content', [])
+            if not isinstance(content, list):
+                return ""
+            return "\n".join(
+                str(block.get('text', '')).strip()
+                for block in content
+                if isinstance(block, dict)
+                and block.get('type') == 'text'
+                and str(block.get('text', '')).strip()
+            ).strip()
+
         choices = response_json.get('choices', [])
         if isinstance(choices, list) and choices:
             first = choices[0]
@@ -1872,7 +1933,7 @@ class DeepLTranslator:
             if selected_provider in {"openai", "reseller"}:
                 selected_provider = "openai_reseller"
             openai_snapshot = None
-            if (selected_provider in {"openai_reseller", "openai_official"}
+            if (selected_provider in {"anthropic", "openai_reseller", "openai_official"}
                     and self.openai_responder):
                 openai_snapshot = self.openai_responder.snapshot_translation_request(
                     selected_provider
@@ -1913,7 +1974,7 @@ class DeepLTranslator:
             return None
 
         selected_provider = snapshot["provider"]
-        if selected_provider in {"openai", "openai_reseller", "openai_official"}:
+        if selected_provider in {"anthropic", "openai", "openai_reseller", "openai_official"}:
             return self._translate_with_openai(
                 text, source, target, selected_provider,
                 request_snapshot=snapshot.get("openai"),
@@ -2610,6 +2671,7 @@ class WhisperWebTranscriber:
         # .env dosyasindan OpenAI API key yukleniyor. Anahtar hemen kullanima
         # acilir; dogrulama testi ACILISI BEKLETMESIN diye arka planda yapilir
         # (senkron test cagrisi ag durumuna gore 15sn'ye kadar surebiliyordu).
+        skip_verify = os.environ.get('WHISPER_SKIP_API_VERIFY', '').strip().lower()
         openai_api_key = os.environ.get("OPENAI_API_KEY")
         if openai_api_key:
             with self.openai_responder._config_lock:
@@ -2621,10 +2683,8 @@ class WhisperWebTranscriber:
                 if self.openai_responder.test_connection():
                     logger.info("OpenAI API key basariyla dogrulandi")
                 else:
-                    self.openai_responder.enabled = False
                     logger.warning("OpenAI API key dogrulanamadi (gecersiz anahtar veya ag sorunu)")
 
-            skip_verify = os.environ.get('WHISPER_SKIP_API_VERIFY', '').strip().lower()
             if skip_verify in {'1', 'true', 'yes', 'on'}:
                 with self.openai_responder._config_lock:
                     self.openai_responder._api_key_status = 'unverified'
@@ -2635,6 +2695,33 @@ class WhisperWebTranscriber:
             with self.openai_responder._config_lock:
                 self.openai_responder._api_key_status = 'missing'
             logger.info("OPENAI_API_KEY .env dosyasinda bulunamadi")
+
+        anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if anthropic_api_key:
+            with self.openai_responder._config_lock:
+                self.openai_responder.anthropic_api_key = anthropic_api_key
+                self.openai_responder.response_provider = 'anthropic'
+                self.openai_responder._anthropic_api_key_status = 'checking'
+            self.openai_responder.enabled = True
+
+            def _verify_anthropic_key():
+                if self.openai_responder.test_connection('anthropic'):
+                    logger.info("Anthropic API key basariyla dogrulandi")
+                else:
+                    logger.warning("Anthropic API key dogrulanamadi (gecersiz anahtar veya ag sorunu)")
+
+            if skip_verify in {'1', 'true', 'yes', 'on'}:
+                with self.openai_responder._config_lock:
+                    self.openai_responder._anthropic_api_key_status = 'unverified'
+                logger.info("Anthropic API key dogrulamasi ortam ayariyla atlandi")
+            else:
+                threading.Thread(target=_verify_anthropic_key, daemon=True).start()
+        else:
+            with self.openai_responder._config_lock:
+                self.openai_responder._anthropic_api_key_status = 'missing'
+                if openai_api_key:
+                    self.openai_responder.response_provider = 'openai_official'
+            logger.info("ANTHROPIC_API_KEY .env dosyasinda bulunamadi")
 
         # ⚠️ HUGGING FACE TOKEN - BU SATIRI DEĞİŞTİRİN! ⚠️
         # Token almak için: https://huggingface.co/settings/tokens
@@ -4681,13 +4768,13 @@ def deepl_config():
     provider = str(data.get('provider', 'deepl') or 'deepl').strip().lower()
     if provider == 'openai':
         provider = 'openai_reseller'
-    if provider not in {'deepl', 'openai_reseller', 'openai_official'}:
+    if provider not in {'deepl', 'anthropic', 'openai_reseller', 'openai_official'}:
         return jsonify({'success': False, 'error': 'Geçersiz çeviri sağlayıcısı'})
 
     with transcriber.translator._config_lock:
         transcriber.translator.provider = provider
 
-        if provider in {'openai_reseller', 'openai_official'}:
+        if provider in {'anthropic', 'openai_reseller', 'openai_official'}:
             transcriber.openai_responder.configure_translation(provider, api_key)
             if api_key:
                 success = bool(
@@ -4706,7 +4793,7 @@ def deepl_config():
             transcriber.translator.api_key = None
             success = False
 
-    if provider in {'openai_reseller', 'openai_official'}:
+    if provider in {'anthropic', 'openai_reseller', 'openai_official'}:
         configured = transcriber.openai_responder.translation_is_configured(provider)
         return jsonify({
             'success': configured, 'verified': False, 'using_shared_key': False,
@@ -4729,7 +4816,7 @@ def translation_settings():
     provider = str(data.get('provider', 'deepl') or 'deepl').strip().lower()
     if provider == 'openai':
         provider = 'openai_reseller'
-    if provider not in {'deepl', 'openai_reseller', 'openai_official'}:
+    if provider not in {'deepl', 'anthropic', 'openai_reseller', 'openai_official'}:
         provider = 'deepl'
     with transcriber.translator._config_lock:
         transcriber.translator.enabled = bool(data.get('enabled', False))
@@ -4737,7 +4824,7 @@ def translation_settings():
         transcriber.translator.source_lang = data.get('sourceLang', 'TR')
         transcriber.translator.target_lang = data.get('targetLang', 'EN')
 
-        if provider in {'openai_reseller', 'openai_official'}:
+        if provider in {'anthropic', 'openai_reseller', 'openai_official'}:
             transcriber.openai_responder.configure_translation(provider, data.get('apiKey'))
             if data.get('apiKey'):
                 transcriber.openai_responder.enabled = True
@@ -5161,7 +5248,10 @@ def get_status():
     state = transcriber.get_runtime_snapshot()
     translation_state = transcriber.translator.snapshot_request()
     with transcriber.openai_responder._config_lock:
-        ai_key_status = transcriber.openai_responder._api_key_status
+        response_provider = transcriber.openai_responder.response_provider
+        ai_key_status = (transcriber.openai_responder._anthropic_api_key_status
+                         if response_provider == 'anthropic'
+                         else transcriber.openai_responder._api_key_status)
     return jsonify({
         'model_loaded': state['model_loaded'],
         'model_name': state['model_name'],
@@ -5170,7 +5260,10 @@ def get_status():
         'session_start': state['session_start'],
         'capture_mode': state['capture_mode'],
         'partial_enabled': state['partial_enabled'],
-        'ai_available': bool(transcriber.openai_responder.api_key),
+        'ai_available': bool(transcriber.openai_responder.anthropic_api_key
+                             if response_provider == 'anthropic'
+                             else transcriber.openai_responder.api_key),
+        'ai_provider': response_provider,
         'ai_key_status': ai_key_status,
         'translation_enabled': translation_state['enabled'],
         'total_transcriptions': state['total_transcriptions'],
@@ -5429,6 +5522,16 @@ def cheap_mode():
     transcriber.openai_responder.cheap_mode = bool(data.get('enabled', False))
     return jsonify({'success': True, 'enabled': transcriber.openai_responder.cheap_mode})
 
+@app.route('/api/ai_provider', methods=['POST'])
+def ai_provider():
+    """Cevap ve okunus icin Anthropic veya resmi OpenAI saglayicisini sec."""
+    data = request.get_json(silent=True) or {}
+    provider = data.get('provider')
+    if transcriber.openai_responder.set_response_provider(provider):
+        return jsonify({'success': True, 'provider': provider})
+    return jsonify({'success': False, 'error': 'Gecersiz AI saglayicisi'}), 400
+
+
 @app.route('/api/ai_response_model', methods=['POST'])
 def ai_response_model():
     """AI Response (Cevap ve Okunuş) model seçimi"""
@@ -5451,28 +5554,30 @@ def ai_translation_model():
 
 @app.route('/api/ai_response_config', methods=['POST'])
 def ai_response_config():
-    """AI Cevap Önerisi (Otomatik Düzelt) için OpenAI API key kaydet"""
-    data = request.json or {}
-    openai_key = data.get('openai_key')
-
-    if not openai_key:
-        return jsonify({'success': False, 'error': 'OpenAI API key gerekli'})
-
+    """Cevap/okunus icin Anthropic veya resmi OpenAI API anahtari kaydet."""
+    data = request.get_json(silent=True) or {}
+    provider = str(data.get('provider') or 'openai_official').strip().lower()
+    api_key = data.get('api_key') or data.get('openai_key')
+    if provider not in {'anthropic', 'openai_official'}:
+        return jsonify({'success': False, 'error': 'Gecersiz AI saglayicisi'}), 400
+    if not api_key:
+        return jsonify({'success': False, 'error': 'API key gerekli'}), 400
     try:
-        result = transcriber.openai_responder.set_api_key(openai_key)
-
+        result = (transcriber.openai_responder.set_api_key(api_key)
+                  if 'provider' not in data else
+                  transcriber.openai_responder.set_api_key(api_key, provider))
         if result:
             transcriber.openai_responder.enabled = True
             transcriber.translator.attach_openai_responder(transcriber.openai_responder)
-            return jsonify({'success': True, 'message': 'OpenAI API key kaydedildi'})
-        else:
-            return jsonify({'success': False, 'error': 'OpenAI bağlantısı başarısız'})
-    except Exception as e:
-        logger.error(f"OpenAI Config Error: {e}", exc_info=True)
-        return jsonify({
-            'success': False,
-            'error': 'OpenAI bağlantısı doğrulanamadı. Anahtarı ve internet bağlantısını kontrol edin.'
-        })
+            label = 'Anthropic' if provider == 'anthropic' else 'OpenAI'
+            return jsonify({'success': True, 'provider': provider,
+                            'message': f'{label} API key kaydedildi'})
+        return jsonify({'success': False, 'error': 'AI saglayicisi baglantisi basarisiz'})
+    except Exception as exc:
+        logger.error(f"AI Config Error: {exc}", exc_info=True)
+        return jsonify({'success': False,
+                        'error': 'AI baglantisi dogrulanamadi. Anahtari ve internet baglantisini kontrol edin.'})
+
 
 @app.route('/api/generate_ai_response', methods=['POST'])
 def generate_ai_response():

@@ -1630,6 +1630,65 @@ def test_speaker_reset_invalidates_inflight_result():
             worker.join(timeout=2)
 
 
+def test_anthropic_provider_contract():
+    """Claude secimi, ayrik anahtarlar ve Messages sozlesmesi agsiz dogrulanir."""
+    responder = buyedektir.OpenAIResponder()
+    check(responder.set_response_provider('anthropic'), 'Claude cevap saglayicisi secilemedi')
+    check(not responder.set_response_provider('unknown'), 'gecersiz AI saglayicisi kabul edildi')
+    check(responder.set_response_model('claude-sonnet-4-6'), 'Claude cevap modeli secilemedi')
+    check(responder.set_model('claude-haiku-4-5-20251001'), 'Claude ceviri modeli secilemedi')
+    with responder._config_lock:
+        responder.anthropic_api_key = 'response-only-key'
+        responder.api_key = 'openai-response-key'
+    responder.configure_translation('anthropic', 'translation-only-key')
+    queued = responder.snapshot_translation_request('anthropic')
+    check(queued['api_key'] == 'translation-only-key', 'Claude ceviri anahtari snapshotta yok')
+    check(responder.anthropic_api_key == 'response-only-key',
+          'Claude ceviri anahtari cevap anahtarini ezdi')
+    calls = []
+    original_post = buyedektir._http_session.post
+    class FakeResponse:
+        status_code = 200
+        text = ''
+        @staticmethod
+        def json():
+            return {'content': [{'type': 'text', 'text': '{"ok":true}'}],
+                    'usage': {'input_tokens': 10, 'output_tokens': 4}}
+    def fake_post(url, **kwargs):
+        calls.append((url, kwargs))
+        return FakeResponse()
+    try:
+        buyedektir._http_session.post = fake_post
+        answer = responder.answer_question('Merhaba', json_mode=True)
+        translation = responder.answer_question(
+            'Cevir', model_type='translation', translation_snapshot=queued)
+        check(answer and answer['response'] == '{"ok":true}' and
+              answer['source'] == 'anthropic', 'Claude cevap ayrismasi basarisiz')
+        check(translation and translation['source'] == 'anthropic',
+              'Claude ceviri snapshoti cagrilmadi')
+        check(len(calls) == 2, f'Claude cagri sayisi yanlis: {len(calls)}')
+        for url, kwargs in calls:
+            check(url == buyedektir._ANTHROPIC_MESSAGES_URL,
+                  'Claude resmi Messages endpointine gitmedi')
+            check(kwargs['headers'].get('anthropic-version') == '2023-06-01',
+                  'Claude API surum basligi eksik')
+            check('Authorization' not in kwargs['headers'],
+                  'Claude anahtari OpenAI Authorization basligina girdi')
+            check('system' in kwargs['json'] and
+                  kwargs['json']['messages'][0]['role'] == 'user' and
+                  'max_tokens' in kwargs['json'] and
+                  'response_format' not in kwargs['json'],
+                  'Claude Messages govdesi gecersiz')
+        check(calls[0][1]['headers']['x-api-key'] == 'response-only-key',
+              'Claude cevap anahtari kullanilmadi')
+        check(calls[1][1]['headers']['x-api-key'] == 'translation-only-key',
+              'Claude ceviri anahtari karisti')
+        check(responder.session_tokens['total'] == 28,
+              'Claude input/output token sayaci yanlis')
+    finally:
+        buyedektir._http_session.post = original_post
+
+
 def main():
     for fn in (test_pronunciation, test_hallucination, test_answer_contract,
                test_conversation_tools_contract,
@@ -1654,6 +1713,7 @@ def main():
                test_capture_open_after_stop_is_stale,
                test_ai_config_tests_connection_once,
                test_openai_compatible_reseller_config,
+               test_anthropic_provider_contract,
                test_translation_provider_snapshot_is_immutable,
                test_translation_settings_snapshot_is_atomic,
                test_speaker_reset_invalidates_inflight_result):
