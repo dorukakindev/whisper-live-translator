@@ -1,6 +1,6 @@
 # Devir notları
 
-Current handoff: [2026-09-15 15:25 - English product screenshots and demo video](docs/devir/2026-09-15-1525.md).
+Current handoff: [2026-09-16 18:27 - English public repository profile](docs/devir/2026-09-16-1827.md).
 
 Güncel devir notu: [2026-09-15 11:25 — dördüncü tur (fuzz/stres testleriyle hedefli bug avı)](docs/devir/2026-09-15-1125.md).
 
@@ -13,6 +13,8 @@ Yeni oturum ve format sonrası kurulum: [BASLANGIC.md](BASLANGIC.md)
 Güncel devir notu: [2026-09-14 14:50 — Oyun modu ve dengeli ses profili](docs/devir/2026-09-14-1450.md)
 
 ## Arşiv
+
+- [2026-09-15 15:25 - English product screenshots and demo video](docs/devir/2026-09-15-1525.md)
 
 - [2026-09-15 14:28 - English public-release documentation and history audit](docs/devir/2026-09-15-1428.md)
 
