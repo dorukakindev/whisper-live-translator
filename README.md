@@ -1,5 +1,9 @@
 # Whisper Pro
 
+[![Windows](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows)](docs/INSTALLATION.md)
+[![MIT License](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)
+[![Public checks](https://github.com/dorukakindev/whisper-live-translator/actions/workflows/public-checks.yml/badge.svg)](https://github.com/dorukakindev/whisper-live-translator/actions/workflows/public-checks.yml)
+
 Whisper Pro is a Windows desktop assistant for live conversations across languages. It captures microphone or Windows system audio, transcribes speech locally with faster-whisper, optionally translates incoming speech, and generates reply suggestions with Turkish-friendly pronunciation guides.
 
 ![Whisper Pro live conversation and reply suggestions](docs/media/whisper-pro-conversation.png)
@@ -33,8 +37,8 @@ An OpenAI API key is needed only for AI replies or OpenAI translation. DeepL and
 ## Quick start
 
 ```powershell
-git clone https://github.com/dorukakindev/whisper-live.git
-Set-Location whisper-live
+git clone https://github.com/dorukakindev/whisper-live-translator.git
+Set-Location whisper-live-translator
 npm ci --no-audit --no-fund
 py -3.12 -m venv .venv
 .venv\Scripts\python.exe -m pip install --upgrade pip

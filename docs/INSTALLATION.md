@@ -7,8 +7,8 @@ Install Git, Node.js/npm, and a compatible 64-bit Python on Windows. Python 3.12
 ## Install
 
 ```powershell
-git clone https://github.com/dorukakindev/whisper-live.git
-Set-Location whisper-live
+git clone https://github.com/dorukakindev/whisper-live-translator.git
+Set-Location whisper-live-translator
 npm ci --no-audit --no-fund
 py -3.12 -m venv .venv
 .venv\Scripts\python.exe -m pip install --upgrade pip

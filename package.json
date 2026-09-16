@@ -1,7 +1,7 @@
 {
     "name": "whisper-pro",
     "version": "1.0.0",
-    "description": "Live multilingual conversation assistant with local Whisper transcription",
+    "description": "Windows desktop assistant for live multilingual transcription, translation, and spoken replies",
     "type": "commonjs",
     "main": "main.js",
     "author": "dorukakindev",
@@ -21,5 +21,22 @@
         "electron": "^34.0.0",
         "electron-builder": "^24.6.4",
         "electron-packager": "^17.1.2"
-    }
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/dorukakindev/whisper-live-translator.git"
+    },
+    "bugs": {
+        "url": "https://github.com/dorukakindev/whisper-live-translator/issues"
+    },
+    "homepage": "https://github.com/dorukakindev/whisper-live-translator#readme",
+    "keywords": [
+        "faster-whisper",
+        "live-transcription",
+        "speech-to-text",
+        "live-translation",
+        "electron",
+        "windows",
+        "multilingual"
+    ]
 }

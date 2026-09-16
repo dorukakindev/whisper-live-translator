@@ -1,6 +1,6 @@
 # Yeni Codex oturumu ve format sonrası başlangıç
 
-Bu dosya konuşma geçmişi olmadan çalışmaya devam etmek içindir. Önce [AGENTS.md](AGENTS.md), sonra [güncel devir notu](DEVIR-NOTU.md) okunmalıdır. Repo: [dorukakindev/whisper-live](https://github.com/dorukakindev/whisper-live). Son doğrulanan dal `main`; yeni oturum gerçek dalı ve uzak adresi yeniden kontrol etmelidir.
+Bu dosya konuşma geçmişi olmadan çalışmaya devam etmek içindir. Önce [AGENTS.md](AGENTS.md), sonra [güncel devir notu](DEVIR-NOTU.md) okunmalıdır. Repo: [dorukakindev/whisper-live-translator](https://github.com/dorukakindev/whisper-live-translator). Son doğrulanan dal `main`; yeni oturum gerçek dalı ve uzak adresi yeniden kontrol etmelidir.
 
 ## Kullanıcının çalışma tercihleri
 
@@ -27,8 +27,8 @@ Bu rehberin yazılması özel yedek alındığı anlamına gelmez. Formatı Code
 3. Uygun bir çalışma klasöründe klonla, ardından Codex'te bu klasörü proje olarak aç:
 
 ```powershell
-git clone https://github.com/dorukakindev/whisper-live.git
-Set-Location whisper-live
+git clone https://github.com/dorukakindev/whisper-live-translator.git
+Set-Location whisper-live-translator
 git status --short
 git branch --show-current
 git rev-parse HEAD

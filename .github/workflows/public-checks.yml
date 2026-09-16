@@ -1,0 +1,36 @@
+name: Public checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  source-safety:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked Node dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Scan the current source tree
+        run: npm run scan
+
+      - name: Check public utility scripts
+        shell: pwsh
+        run: |
+          node --check scripts/audit-git-history.js
+          node --check scripts/generate-public-demo.js

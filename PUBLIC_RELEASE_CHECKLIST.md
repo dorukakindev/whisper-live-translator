@@ -1,12 +1,13 @@
 # Public release checklist
 
-This repository is still private. Complete every blocking item before changing its visibility.
+This repository is public. The unresolved history findings below are an active security-remediation task; a new commit does not remove old blobs.
 
-## Current audit status (2026-09-15)
+## Current audit status (2026-09-16)
 
 - [x] Current source tree passes `npm run scan`.
 - [x] Known local runtime data, credential files, environments, models, dependencies, and packaged output are covered by .gitignore.
 - [x] English README, installation, usage, privacy, security, contribution, troubleshooting, license, and third-party notices are present.
+- [x] Public repository name, clone URLs, package metadata, screenshots, and English documentation are aligned.
 - [ ] **BLOCKER:** Full-history scanning reports credential-shaped content in old commits.
 - [ ] Confirm that every reported credential has been revoked or was never valid.
 - [ ] Rewrite affected Git history only after explicit owner approval and coordination.
@@ -19,7 +20,7 @@ This repository is still private. Complete every blocking item before changing i
 
 ## Known history-scan findings
 
-The 2026-09-15 redacted scan checked 62 reachable revisions and reported nine unique path/fingerprint combinations:
+The 2026-09-16 redacted scan checked 66 reachable revisions and reported nine unique path/fingerprint combinations:
 
 - three OpenAI-compatible key candidates in an archived translator file;
 - one Google API key candidate in the same archived translator file;
