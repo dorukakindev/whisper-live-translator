@@ -1,5 +1,7 @@
 # Devir notları
 
+Güncel devir notu: [2026-09-19 16:52 — birleşik derin bug taraması (N-1..N-14) ve rapor](docs/devir/2026-09-19-1652.md).
+
 Current handoff: [2026-09-16 20:54 - Official Claude provider support](docs/devir/2026-09-16-2054.md).
 
 Current handoff: [2026-09-16 20:20 - English default interface and Turkish switch](docs/devir/2026-09-16-2020.md).
