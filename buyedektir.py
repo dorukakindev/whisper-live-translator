@@ -4952,13 +4952,18 @@ def push_to_talk():
             return jsonify({'success': False, 'error': 'active boolean olmalı'}), 400
         active = data['active']
         source = str(data.get('source') or 'renderer')[:32]
+        client = data.get('client')
+        client = str(client)[:64] if isinstance(client, str) else None
         sequence = data.get('sequence')
         if type(sequence) is int:
-            previous = transcriber._ptt_sequences.get(source, -1)
-            if sequence <= previous:
+            previous_client, previous = transcriber._ptt_sequences.get(source, (None, -1))
+            same_client = previous_client == client
+            if ((same_client and sequence <= previous)
+                    or (not same_client and previous_client is not None and not active)):
                 return jsonify({'success': True, 'ptt': transcriber.ptt_active,
                                 'stale': True})
-            transcriber._ptt_sequences[source] = sequence
+            # Yeni istemci PTT'yi yalnızca başlatma komutuyla devralabilir.
+            transcriber._ptt_sequences[source] = (client, sequence)
         if active and not transcriber.is_running:
             return jsonify({'success': False, 'error': 'Önce ses yakalamayı başlatın'}), 409
         transcriber.ptt_active = active
