@@ -2635,6 +2635,7 @@
             sourceLang: 'TR',
             targetLang: 'EN'
         };
+        let translationKeyAvailability = {};
         let speakerDiarizationEnabled = false;
         let speakers = {};
         let speakerColors = {};
@@ -2654,6 +2655,7 @@
                 initialInstanceId = initialStatus.instance_id || null;
                 if (!_backendInstanceId) _backendInstanceId = initialInstanceId;
                 renderAiKeyStatus(initialStatus.ai_key_status);
+                translationKeyAvailability = initialStatus.translation_key_available || {};
                 updateSetupChecklist(initialStatus);
             } catch (error) {
                 console.error('İlk backend kimliği alınamadı:', error);
@@ -3183,7 +3185,8 @@
                 panel.classList.add('active');
 
                 // API key kontrolü
-                if (!translationSettings.apiKey) {
+                if (!translationSettings.apiKey
+                        && !translationKeyAvailability[translationSettings.provider]) {
                     const providerName = translationSettings.provider === 'anthropic'
                         ? 'Anthropic' : translationSettings.provider === 'deepl' ? 'DeepL' : 'OpenAI';
                     updateTranslationStatus(`Lütfen ${providerName} çeviri API key girin`, 'warning');
@@ -3654,6 +3657,7 @@
             );
             _backendInstanceId = st.instance_id || _backendInstanceId;
             renderAiKeyStatus(st.ai_key_status);
+            translationKeyAvailability = st.translation_key_available || {};
             updateSetupChecklist(st);
             if (backendRestarted) {
                 _hydrationGeneration++;
@@ -5159,13 +5163,20 @@
         let pttCommandChain = Promise.resolve();
         function setPtt(active) {
             const sequence = ++pttCommandSequence;
-            pttCommandChain = pttCommandChain.catch(() => {}).then(() => fetch('/api/ptt', {
+            const command = pttCommandChain.catch(() => {}).then(() => fetch('/api/ptt', {
                 method: 'POST',
                 keepalive: true,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ active: active, source: 'renderer', sequence })
-            })).catch(err => console.error('PTT hatasi:', err));
-            return pttCommandChain;
+            })).then(async response => {
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'PTT komutu kabul edilmedi');
+                }
+                return data;
+            });
+            pttCommandChain = command.catch(err => console.error('PTT hatasi:', err));
+            return command;
         }
         function cancelPendingPtt() {
             if (pttPendingTimer) {
@@ -5196,8 +5207,14 @@
             pttPendingTimer = setTimeout(() => {
                 pttPendingTimer = null;
                 pttHeld = true;
-                setPtt(true);
-                showAlert('🎙️ Ctrl basılı — soru dinleniyor (bırakınca yazıya dökülür)', 'info');
+                setPtt(true).then(() => {
+                    if (pttHeld) {
+                        showAlert('🎙️ Ctrl basılı — soru dinleniyor (bırakınca yazıya dökülür)', 'info');
+                    }
+                }).catch(err => {
+                    pttHeld = false;
+                    showAlert(err.message || 'Bas-konuş başlatılamadı', 'error');
+                });
             }, 150);
         });
         document.addEventListener('keyup', (e) => {

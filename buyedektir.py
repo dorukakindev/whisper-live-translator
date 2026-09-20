@@ -2245,30 +2245,12 @@ class SpeakerDiarizer:
 
             audio_tensor = torch.from_numpy(audio_float).unsqueeze(0)
 
-            # Diarization: ses dogrudan BELLEKTEN verilir; gecici WAV yazip geri
-            # okumak her cumlede gereksiz disk I/O ve kodlama maliyetiydi.
-            # Eski pyannote surumleri tensor girdiyi desteklemezse dosya yoluna dusulur.
-            try:
-                diarization = self.pipeline(
-                    {"waveform": audio_tensor, "sample_rate": sample_rate}
-                )
-            except Exception as mem_err:
-                logger.debug(f"Bellekten diarization olmadi, gecici dosyaya dusuluyor: {mem_err}")
-                import tempfile
-                import torchaudio
-                # tmp_path dosya OLUSUR OLUSMAZ atanir (save'den ONCE): torchaudio.save
-                # patlasa bile diskte kalan dosya finally'de silinsin (eskiden tmp_path
-                # save'den sonra atandigindan save hatasinda dosya sizardi).
-                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
-                    tmp_path = tmp_file.name
-                try:
-                    torchaudio.save(tmp_path, audio_tensor, sample_rate)
-                    diarization = self.pipeline(tmp_path)
-                finally:
-                    try:
-                        os.unlink(tmp_path)
-                    except OSError:
-                        pass
+            # Pipeline'a sesi daima tensor olarak ver. Dosya-yolu fallback'i yeni
+            # pyannote/torchcodec'te sistem FFmpeg DLL'lerine bagimliydi ve bellek
+            # yolu calisabilecek kurulumlarda bile ikinci, bozuk bir hata uretiyordu.
+            diarization = self.pipeline(
+                {"waveform": audio_tensor, "sample_rate": sample_rate}
+            )
 
             # Konuşmacı segmentlerini analiz et
             speaker_durations = {}
@@ -5337,6 +5319,11 @@ def get_status():
         ai_key_status = (transcriber.openai_responder._anthropic_api_key_status
                          if response_provider == 'anthropic'
                          else transcriber.openai_responder._api_key_status)
+        translation_key_available = {
+            provider: bool(transcriber.openai_responder.translation_api_keys.get(provider))
+            for provider in ('anthropic', 'openai_reseller', 'openai_official')
+        }
+    translation_key_available['deepl'] = bool(translation_state['deepl_api_key'])
     return jsonify({
         'model_loaded': state['model_loaded'],
         'model_name': state['model_name'],
@@ -5351,6 +5338,7 @@ def get_status():
         'ai_provider': response_provider,
         'ai_key_status': ai_key_status,
         'translation_enabled': translation_state['enabled'],
+        'translation_key_available': translation_key_available,
         'total_transcriptions': state['total_transcriptions'],
         'instance_id': INSTANCE_ID,
     })
@@ -5753,9 +5741,12 @@ def generate_ai_response():
         )
 
         context_id = data.get('transcript_id')
-        if not isinstance(context_id, int) or isinstance(context_id, bool):
-            context_id = transcriber._next_transcription_id + 1
-        translation_context = transcriber.get_translation_context(context_id) if mode != 'answer' else ''
+        if isinstance(context_id, str) and context_id.strip().isdigit():
+            context_id = int(context_id.strip())
+        elif not isinstance(context_id, int) or isinstance(context_id, bool):
+            context_id = None
+        translation_context = (transcriber.get_translation_context(context_id)
+                               if mode != 'answer' and context_id is not None else '')
 
         if mode == 'answer':
             # Turkce disindaki cevaplar icin pratik Turkce okunus uretilir.

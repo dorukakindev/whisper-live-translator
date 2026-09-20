@@ -1669,6 +1669,9 @@ def test_verified_report_regressions():
         check(valid.status_code == 200, 'gecerli ceviri ayari reddedildi')
         check(responder.translation_api_keys['anthropic'] == 'keep-me',
               'apiKey alani olmayan ayar mevcut Claude anahtarini sildi')
+        key_status = client.get('/api/status').get_json()['translation_key_available']
+        check(key_status.get('anthropic') is True,
+              'backend ceviri anahtari varligi UI durumuna tasinmadi')
     finally:
         with transcriber.translator._config_lock:
             transcriber.translator.enabled = old_translation['enabled']
@@ -1685,6 +1688,34 @@ def test_verified_report_regressions():
     check(bad_text.status_code == 400 and not bad_text.get_json()['success'],
           'string olmayan AI metni kontrollu reddedilmedi')
     check(bad_lang.status_code == 400, 'string olmayan hedef dil kontrollu reddedilmedi')
+
+    saved_answer = responder.answer_question
+    saved_response_key = responder.api_key
+    saved_context = transcriber.get_translation_context
+    context_ids = []
+    responder.api_key = 'test-key'
+    responder.answer_question = lambda *_a, **_k: {'response': json.dumps({
+        'translation': 'Hello', 'turkish': 'Merhaba', 'romanized': 'helo',
+        'detected_lang': 'tr'
+    })}
+    transcriber.get_translation_context = lambda before_id: context_ids.append(before_id) or ''
+    try:
+        invalid_context = client.post('/api/generate_ai_response', json={
+            'text': 'Merhaba', 'mode': 'translate_dual', 'target_lang': 'en',
+            'transcript_id': 'gecersiz'
+        })
+        check(invalid_context.status_code == 200 and context_ids == [],
+              'gecersiz transcript_id onceki kaydi baglama katti')
+        numeric_context = client.post('/api/generate_ai_response', json={
+            'text': 'Merhaba', 'mode': 'translate_dual', 'target_lang': 'en',
+            'transcript_id': '42'
+        })
+        check(numeric_context.status_code == 200 and context_ids == [42],
+              'sayisal string transcript_id kontrollu int olarak kullanilmadi')
+    finally:
+        responder.answer_question = saved_answer
+        responder.api_key = saved_response_key
+        transcriber.get_translation_context = saved_context
 
     with responder._config_lock:
         old_provider = responder.response_provider
