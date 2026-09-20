@@ -1761,6 +1761,16 @@ def test_verified_report_regressions():
             'client': 'reloaded-page'}).get_json()
         check(reloaded.get('stale') is not True and transcriber.ptt_active is True,
               'sayfa yenilendikten sonra PTT komutu stale sayildi')
+        old_stop = client.post('/api/ptt', json={
+            'active': False, 'source': 'smoke', 'sequence': 3,
+            'client': 'first-page'}).get_json()
+        check(old_stop.get('stale') is True and transcriber.ptt_active is True,
+              'eski sayfanin gec stop komutu yeni sayfanin PTT tutusunu kesti')
+        client.post('/api/ptt', json={
+            'active': False, 'source': 'smoke', 'sequence': 2,
+            'client': 'reloaded-page'})
+        check(transcriber.ptt_active is False,
+              'yeni sayfanin stop komutu uygulanmadi')
     finally:
         transcriber.is_running = old_running
         transcriber.ptt_active = old_ptt

@@ -4957,10 +4957,12 @@ def push_to_talk():
         sequence = data.get('sequence')
         if type(sequence) is int:
             previous_client, previous = transcriber._ptt_sequences.get(source, (None, -1))
-            if previous_client == client and sequence <= previous:
+            same_client = previous_client == client
+            if ((same_client and sequence <= previous)
+                    or (not same_client and previous_client is not None and not active)):
                 return jsonify({'success': True, 'ptt': transcriber.ptt_active,
                                 'stale': True})
-            # Yeni sayfa istemcisi kendi PTT sıra dizisini başlatır.
+            # Yeni istemci PTT'yi yalnızca başlatma komutuyla devralabilir.
             transcriber._ptt_sequences[source] = (client, sequence)
         if active and not transcriber.is_running:
             return jsonify({'success': False, 'error': 'Önce ses yakalamayı başlatın'}), 409
