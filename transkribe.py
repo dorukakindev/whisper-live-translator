@@ -48,6 +48,7 @@ def detect_device():
     try:
         import torch
         if torch.cuda.is_available():
+            torch.zeros(1, device="cuda")
             name = torch.cuda.get_device_name(0)
             return "cuda", f"CUDA  ({name})"
     except Exception:
@@ -289,6 +290,8 @@ class App(tk.Tk):
 
     def _on_model_change(self):
         # Model veya cihaz değişince cache'i temizle
+        if self._running:
+            return
         self._model = None
         self._loaded_model_key = None
 
@@ -405,7 +408,16 @@ class App(tk.Tk):
             if self._model is None or self._loaded_model_key != model_key:
                 self._log(f"Model yükleniyor: {selected_model}  [{device.upper()}]...")
                 self._set_status("Model yükleniyor...")
-                self._model = WhisperModel(model_path, device=device, compute_type=compute_type)
+                try:
+                    self._model = WhisperModel(model_path, device=device, compute_type=compute_type)
+                except Exception as exc:
+                    if device != "cuda":
+                        raise
+                    self._log(f"CUDA modeli açılamadı, CPU deneniyor: {exc}")
+                    device = "cpu"
+                    compute_type = "int8"
+                    model_key = (selected_model, device)
+                    self._model = WhisperModel(model_path, device=device, compute_type=compute_type)
                 self._loaded_model_key = model_key
                 self._log("Model hazır.\n")
             else:

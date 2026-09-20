@@ -151,7 +151,7 @@
             if (event.key === 'theme') applyStoredTheme();
         });
         let socket = null;
-        try { socket = io(); } catch (e) { console.error('Socket.IO bağlantı hatası:', e); }
+        try { socket = io({ auth: { token: APP_TOKEN } }); } catch (e) { console.error('Socket.IO bağlantı hatası:', e); }
 
         let lastTranscriptId = null;
         let lastTranscriptText = '';
@@ -276,8 +276,11 @@
             const requestRevision = lastTranscriptRevision;
             const btn = document.getElementById('aiBtn');
             if (btn) { btn.disabled = true; btn.textContent = 'Yükleniyor…'; }
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 60000);
             fetch('/api/generate_ai_response', {
                 method: 'POST',
+                signal: controller.signal,
                 headers: {
                     'Content-Type': 'application/json'
                 },
@@ -291,6 +294,7 @@
             })
                 .then(r => r.json())
                 .then(data => {
+                    clearTimeout(timeout);
                     // Istek A icin beklerken transkript B geldiyse A'nin cevabini
                     // yeni kartin altina yazma. Eski buton zaten DOM'dan cikmistir.
                     if (requestRevision !== lastTranscriptRevision || requestTranscriptId !== lastTranscriptId
@@ -314,10 +318,15 @@
                     }).join('');
                 })
                 .catch(err => {
+                    clearTimeout(timeout);
                     console.error('overlay answer hatası:', err);
                     if (requestRevision !== lastTranscriptRevision || requestTranscriptId !== lastTranscriptId
                             || requestInstanceId !== backendInstanceId) return;
                     if (btn) { btn.disabled = false; btn.textContent = 'Cevap Önerisi'; }
+                    const area = document.getElementById('answerArea');
+                    if (area && err.name === 'AbortError') {
+                        area.textContent = 'Öneri isteği zaman aşımına uğradı.';
+                    }
                 });
         }
 

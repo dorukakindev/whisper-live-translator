@@ -136,7 +136,9 @@ def test_hallucination():
 def test_answer_contract():
     app = buyedektir.app
     client = make_client()
-    sio = buyedektir.socketio.test_client(app)
+    sio = buyedektir.socketio.test_client(
+        app, auth={'token': buyedektir.APP_TOKEN}
+    )
     sio.get_received()  # baglanti olaylarini temizle
     responder = buyedektir.transcriber.openai_responder
     saved_key = responder.api_key
@@ -1592,7 +1594,9 @@ def test_speaker_reset_invalidates_inflight_result():
     def slow_pipeline(_audio):
         entered.set()
         release.wait(timeout=2)
-        return Diarization()
+        return type('DiarizeOutput', (), {
+            'speaker_diarization': Diarization()
+        })()
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         diarizer = buyedektir.SpeakerDiarizer.__new__(buyedektir.SpeakerDiarizer)
@@ -1628,6 +1632,101 @@ def test_speaker_reset_invalidates_inflight_result():
         finally:
             release.set()
             worker.join(timeout=2)
+
+
+def test_verified_report_regressions():
+    """19/15 Eylul raporlarindan dogrulanan API ve dil regresyonlari."""
+    client = make_client()
+    transcriber = buyedektir.transcriber
+    responder = transcriber.openai_responder
+
+    unauth = buyedektir.socketio.test_client(buyedektir.app)
+    check(not unauth.is_connected(), 'tokensiz Socket.IO baglantisi kabul edildi')
+    auth = buyedektir.socketio.test_client(
+        buyedektir.app, auth={'token': buyedektir.APP_TOKEN})
+    check(auth.is_connected(), 'tokenli Socket.IO baglantisi reddedildi')
+    auth.disconnect()
+
+    check(transcriber._detect_script_lang('This is a long Latin sentence with Я') is None,
+          'tek yabanci harf Latin metnin dilini ele gecirdi')
+    check(transcriber._detect_script_lang('こんにちは世界', 'ja') == 'ja',
+          'gercek Japonca script algilanmadi')
+
+    old_translation = transcriber.translator.snapshot_request()
+    with responder._config_lock:
+        old_key = responder.translation_api_keys.get('anthropic')
+        responder.translation_api_keys['anthropic'] = 'keep-me'
+    try:
+        invalid = client.post('/api/translation_settings', json={
+            'provider': 'anthropic', 'enabled': 'false',
+            'sourceLang': 'TR', 'targetLang': ['JA']
+        })
+        check(invalid.status_code == 400, 'gecersiz ceviri ayari kabul edildi')
+        valid = client.post('/api/translation_settings', json={
+            'provider': 'anthropic', 'enabled': True,
+            'sourceLang': 'TR', 'targetLang': 'JA'
+        })
+        check(valid.status_code == 200, 'gecerli ceviri ayari reddedildi')
+        check(responder.translation_api_keys['anthropic'] == 'keep-me',
+              'apiKey alani olmayan ayar mevcut Claude anahtarini sildi')
+    finally:
+        with transcriber.translator._config_lock:
+            transcriber.translator.enabled = old_translation['enabled']
+            transcriber.translator.provider = old_translation['provider']
+            transcriber.translator.source_lang = old_translation['source_lang']
+            transcriber.translator.target_lang = old_translation['target_lang']
+        with responder._config_lock:
+            responder.translation_api_keys['anthropic'] = old_key
+
+    bad_text = client.post('/api/generate_ai_response', json={
+        'text': 123, 'mode': 'answer', 'target_lang': 'ja'})
+    bad_lang = client.post('/api/generate_ai_response', json={
+        'text': 'Merhaba', 'mode': 'answer', 'target_lang': ['ja']})
+    check(bad_text.status_code == 400 and not bad_text.get_json()['success'],
+          'string olmayan AI metni kontrollu reddedilmedi')
+    check(bad_lang.status_code == 400, 'string olmayan hedef dil kontrollu reddedilmedi')
+
+    with responder._config_lock:
+        old_provider = responder.response_provider
+        old_anthropic_key = responder.anthropic_api_key
+        responder.response_provider = 'anthropic'
+        responder.anthropic_api_key = 'claude-only'
+    old_answer = responder.answer_question
+    with transcriber._lifecycle_lock:
+        old_records = list(transcriber.transcriptions)
+        transcriber.transcriptions.clear()
+        transcriber.transcriptions.append({
+            'id': 999001, 'source': 'system', 'text': 'Hello there'
+        })
+    responder.answer_question = lambda *_a, **_k: {'response': 'Kısa özet'}
+    try:
+        chat = client.post('/api/ai_chat', json={'action': 'summary'}).get_json()
+        check(chat.get('success') is True and chat.get('response') == 'Kısa özet',
+              'Claude-only kullanicida ai_chat kapali kaldi')
+    finally:
+        responder.answer_question = old_answer
+        with responder._config_lock:
+            responder.response_provider = old_provider
+            responder.anthropic_api_key = old_anthropic_key
+        with transcriber._lifecycle_lock:
+            transcriber.transcriptions.clear()
+            transcriber.transcriptions.extend(old_records)
+
+    old_running = transcriber.is_running
+    old_ptt = transcriber.ptt_active
+    old_sequences = dict(transcriber._ptt_sequences)
+    try:
+        transcriber.is_running = True
+        client.post('/api/ptt', json={
+            'active': False, 'source': 'smoke', 'sequence': 2})
+        stale = client.post('/api/ptt', json={
+            'active': True, 'source': 'smoke', 'sequence': 1}).get_json()
+        check(stale.get('stale') is True and transcriber.ptt_active is False,
+              'gecikmis PTT start komutu stop sonrasinda uygulandi')
+    finally:
+        transcriber.is_running = old_running
+        transcriber.ptt_active = old_ptt
+        transcriber._ptt_sequences = old_sequences
 
 
 def test_anthropic_provider_contract():
@@ -1716,7 +1815,8 @@ def main():
                test_anthropic_provider_contract,
                test_translation_provider_snapshot_is_immutable,
                test_translation_settings_snapshot_is_atomic,
-               test_speaker_reset_invalidates_inflight_result):
+               test_speaker_reset_invalidates_inflight_result,
+               test_verified_report_regressions):
         print(f"-> {fn.__name__}")
         try:
             fn()

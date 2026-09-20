@@ -442,6 +442,20 @@ function sendPttRequest(active) {
         if (serial !== globalPttRequestSerial || isQuitting) return;
         globalPttActive = false;
         if (tray) tray.setToolTip('Whisper Pro');
+        // İlk isteğin backend'de uygulanıp yalnız yanıtının kaybolduğu durumda
+        // PTT açık kalmasın; daha yeni sequence ile telafi stop'u gönder.
+        try {
+            const stopSerial = ++globalPttRequestSerial;
+            const recovery = net.request({
+                method: 'POST', url: `http://localhost:${PORT}/api/ptt`
+            });
+            recovery.setHeader('Content-Type', 'application/json');
+            recovery.setHeader('X-Whisper-Token', APP_TOKEN);
+            recovery.on('error', () => {});
+            recovery.end(JSON.stringify({
+                active: false, source: 'global', sequence: stopSerial
+            }));
+        } catch (_) { /* Uygulama kapaniyorsa telafi de gonderilemeyebilir. */ }
         dialog.showErrorBox('Yakalama PTT', message);
     };
     try {
@@ -477,7 +491,7 @@ function sendPttRequest(active) {
                 } catch (_) { fail('PTT yanıtı okunamadı.'); }
             });
         });
-        request.end(JSON.stringify({ active }));
+        request.end(JSON.stringify({ active, source: 'global', sequence: serial }));
     } catch (err) {
         console.error('Global PTT istegi gonderilemedi:', err);
         fail('PTT isteği gönderilemedi.');

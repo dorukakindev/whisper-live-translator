@@ -81,6 +81,7 @@ const win = {};
 Object.defineProperty(win, 'localStorage', {get() {throw Error('denied');}});
 let sent = false;
 const overlayCtx = vm.createContext({window: win, document: {readyState: 'complete', getElementById: () => null}, console: {warn() {}},
+    AbortController, setTimeout, clearTimeout,
     lastTranscriptId: 1, lastTranscriptText: 'Hello', lastTranscriptRevision: 0, backendInstanceId: 'test',
     fetch: (url, options) => {assert.strictEqual(JSON.parse(options.body).target_lang, 'auto'); sent = true; return Promise.resolve({json: async () => ({success: true, options: []})});}});
 vm.runInContext(fs.readFileSync('static/runtime-safety.js', 'utf8'), overlayCtx);

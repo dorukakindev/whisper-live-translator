@@ -2580,7 +2580,7 @@
         // Socket.IO bağlantısı
         let socket = null;
         try {
-            socket = io();
+            socket = io({ auth: { token: APP_TOKEN } });
         } catch (e) {
             console.error('Socket.IO baglanti hatasi:', e);
         }
@@ -3183,8 +3183,10 @@
                 panel.classList.add('active');
 
                 // API key kontrolü
-                if (translationSettings.provider === 'deepl' && !translationSettings.apiKey) {
-                    updateTranslationStatus('Lütfen DeepL API key girin', 'warning');
+                if (!translationSettings.apiKey) {
+                    const providerName = translationSettings.provider === 'anthropic'
+                        ? 'Anthropic' : translationSettings.provider === 'deepl' ? 'DeepL' : 'OpenAI';
+                    updateTranslationStatus(`Lütfen ${providerName} çeviri API key girin`, 'warning');
                     document.getElementById('deeplApiKey').focus();
                 } else if (translationSettings.provider === 'anthropic') {
                     updateTranslationStatus('Claude çeviri aktif', 'success');
@@ -3312,7 +3314,10 @@
                     modelEl.classList.add('installed');
                     document.getElementById('downloadProgress').classList.remove('active');
 
-                    showAlert(`${selectedModel} modeli başarıyla yüklendi (${data.device})`, 'success');
+                    showAlert(data.gpu_fallback
+                        ? `${selectedModel} GPU'da yüklenemedi; CPU kullanılıyor`
+                        : `${selectedModel} modeli başarıyla yüklendi (${data.device})`,
+                        data.gpu_fallback ? 'warning' : 'success');
                     document.getElementById('statusText').textContent = `Hazır - ${selectedModel} (${data.device})`;
                     document.getElementById('statusDot').className = 'status-dot inactive';
                     document.getElementById('startBtn').disabled = false;
@@ -3656,6 +3661,7 @@
                 transcriptionTexts = {};
                 seenTranscriptionIds.clear();
                 prunedTranscriptionId = -1;
+                window._transcriptRevisions = {};
                 resetSpeakerSummary();
                 const list = document.getElementById('transcriptionList');
                 if (list) list.innerHTML = EMPTY_STATE_HTML;
@@ -3909,6 +3915,18 @@
             // Bekleyen Baslat retry'si Durdur'dan sonra yakalamayi yeniden acmasin.
             cancelCaptureStartRetries();
             try {
+                // Son konuşma tamponunu önce final kuyruğuna gönder ve işlenmesini
+                // bekle. Doğrudan stop generation'ı artırdığı için aksi halde son
+                // tamamlanmış cümle sessizce düşebilirdi.
+                await fetch('/api/flush', { method: 'POST' }).catch(() => null);
+                const drainDeadline = Date.now() + 10000;
+                await new Promise(resolve => setTimeout(resolve, 180));
+                while (Date.now() < drainDeadline) {
+                    const stats = await fetch('/api/stats').then(r => r.json()).catch(() => null);
+                    if (stats && !stats.pipeline?.asr_active
+                            && Number(stats.performance?.audio_queue_size || 0) === 0) break;
+                    await new Promise(resolve => setTimeout(resolve, 120));
+                }
                 const response = await fetch('/api/stop', {
                     method: 'POST'
                 });
@@ -4340,7 +4358,9 @@
             // (eski 900ms bekleme her mesaja ~1sn olu zaman ekliyordu).
             const autoTranslateCheckbox = document.getElementById('autoTranslateEnabled');
             const aiEnabledCheckbox = document.getElementById('aiResponseEnabled');
-            if (!restoring && autoTranslateCheckbox && autoTranslateCheckbox.checked && aiEnabledCheckbox && aiEnabledCheckbox.checked) {
+            if (!restoring && !translationSettings.enabled
+                    && autoTranslateCheckbox && autoTranslateCheckbox.checked
+                    && aiEnabledCheckbox && aiEnabledCheckbox.checked) {
                 const translateBtn = item.querySelector('.ai-translate-btn');
                 if (translateBtn) {
                     getAIResponseById(data.id, 'translate', translateBtn);
@@ -4760,10 +4780,6 @@
                 option.closest('optgroup')?.label.includes('Claude') === wantClaude);
             select.value = choices.some(option => option.value === savedModel)
                 ? savedModel : choices[0].value;
-            fetch('/api/ai_translation_model', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model: select.value })
-            }).catch(err => console.error('AI translation model provider sync error:', err));
         }
         function changeAITranslationModel() {
             const modelId = document.getElementById('aiTranslationModelSelect').value;
@@ -4794,7 +4810,7 @@
                 ? 'anthropicResponseApiKey' : 'openaiOfficialResponseApiKey';
         }
 
-        function changeAIProvider() {
+        function changeAIProvider(persist = true) {
             const provider = document.getElementById('aiProviderSelect').value;
             whisperStorage.setItem('aiResponseProvider', provider);
             document.getElementById('aiApiKeyLabel').textContent = provider === 'anthropic'
@@ -4821,11 +4837,14 @@
                     ? savedModel : choices[0].value;
                 const endpoint = id === 'aiModelSelect'
                     ? '/api/ai_response_model' : '/api/ai_translation_model';
-                fetch(endpoint, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ model: select.value })
-                }).catch(err => console.error('AI model provider sync error:', err));
+                if (persist) {
+                    fetch(endpoint, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ model: select.value })
+                    }).catch(err => console.error('AI model provider sync error:', err));
+                }
             }
+            if (!persist) return Promise.resolve();
             return fetch('/api/ai_provider', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ provider })
@@ -4862,19 +4881,20 @@
         }
 
         async function loadAIConfig() {
-            let provider = whisperStorage.getItem('aiResponseProvider');
-            if (!provider) {
-                try {
-                    const status = await fetch('/api/status').then(r => r.json());
-                    provider = status.ai_provider || 'openai_official';
-                } catch (_) { provider = 'openai_official'; }
+            // Backend calisan yapilandirmanin tek kaynagidir. localStorage yalnizca
+            // backend'e henuz anahtar verilmemisse eski kullanici girdisini kurtarir.
+            const providerStatus = await fetch('/api/status').then(r => r.json()).catch(() => ({}));
+            let provider = providerStatus.ai_provider;
+            if (!['anthropic', 'openai_official'].includes(provider)) {
+                provider = whisperStorage.getItem('aiResponseProvider');
             }
+            if (!['anthropic', 'openai_official'].includes(provider)) provider = 'openai_official';
             document.getElementById('aiProviderSelect').value =
                 provider === 'openai_official' ? provider : 'anthropic';
-            changeAIProvider();
+            changeAIProvider(false);
             const selectedProvider = document.getElementById('aiProviderSelect').value;
             const savedKey = whisperStorage.getItem(aiKeyStorageKey(selectedProvider));
-            if (savedKey) {
+            if (savedKey && providerStatus.ai_key_status === 'missing') {
                 const field = document.getElementById('openaiApiKeyAI');
                 field.value = savedKey;
                 const status = document.getElementById('aiResponseStatus');
@@ -5135,12 +5155,17 @@
         // Push-to-talk: Ctrl basili tutuldukca karsidakini dinle, birakinca o segment yaziya dokulur.
         let pttHeld = false;
         let pttPendingTimer = null;  // Ctrl'e basildiktan sonra PTT'yi GERCEKTEN baslatan gecikme
+        let pttCommandSequence = 0;
+        let pttCommandChain = Promise.resolve();
         function setPtt(active) {
-            fetch('/api/ptt', {
+            const sequence = ++pttCommandSequence;
+            pttCommandChain = pttCommandChain.catch(() => {}).then(() => fetch('/api/ptt', {
                 method: 'POST',
+                keepalive: true,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ active: active })
-            }).catch(err => console.error('PTT hatasi:', err));
+                body: JSON.stringify({ active: active, source: 'renderer', sequence })
+            })).catch(err => console.error('PTT hatasi:', err));
+            return pttCommandChain;
         }
         function cancelPendingPtt() {
             if (pttPendingTimer) {
@@ -5304,7 +5329,17 @@
         // kalirdi. beforeunload her iki PTT turunu de son bir kez kapatir.
         window.addEventListener('beforeunload', () => {
             cancelPendingPtt();
-            if (pttHeld) { pttHeld = false; setPtt(false); }
+            if (pttHeld) {
+                pttHeld = false;
+                fetch('/api/ptt', {
+                    method: 'POST', keepalive: true,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        active: false, source: 'renderer',
+                        sequence: ++pttCommandSequence
+                    })
+                }).catch(() => {});
+            }
             // Promise zincirini bekleme: sayfa yok oldugunda then calismayabilir.
             // Backend kimligi, bu iptal start'tan once ulassa bile hatirlar.
             if (altPttRecordingId) setAltPtt(false, true, altPttRecordingId).catch(() => {});

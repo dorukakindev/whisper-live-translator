@@ -9,8 +9,9 @@ function normalizeCommandLine(value) {
 function isOwnedWhisperBackend(commandLine, appDir) {
     const normalized = normalizeCommandLine(commandLine);
     const expectedScript = normalizeCommandLine(path.resolve(appDir, 'buyedektir.py'));
+    const hasScriptName = /(?:^|[\s"'])[^\s"']*buyedektir\.py(?:[\s"']|$)/.test(normalized);
     return normalized.includes('--whisper-electron-child')
-        && normalized.includes(expectedScript);
+        && (normalized.includes(expectedScript) || hasScriptName);
 }
 
 function isExpectedBackendResponse(statusCode, payload, expectedNonce) {

@@ -19,7 +19,7 @@ class Parser(HTMLParser):
         if tag == 'button': self.handlers.append(dict(attrs)['onclick'])
 p=Parser(); p.handlers=[]; p.feed(sys.stdin.read()); print(json.dumps(p.handlers))`;
 const parsed = spawnSync(path.join(__dirname, '.venv/Scripts/python.exe'), ['-X', 'utf8', '-c', parser], {input: buttons, encoding: 'utf8'});
-assert.strictEqual(parsed.status, 0, parsed.stderr);
+assert.strictEqual(parsed.status, 0, parsed.error ? parsed.error.message : parsed.stderr);
 const handlers = JSON.parse(parsed.stdout);
 assert.strictEqual(handlers.length, values.length);
 handlers.forEach((handler, index) => {

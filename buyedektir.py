@@ -142,6 +142,13 @@ else:
     allowed_origins = [f"http://127.0.0.1:{_cors_port}", f"http://localhost:{_cors_port}"]
 socketio = SocketIO(app, cors_allowed_origins=allowed_origins, async_mode='threading')
 
+@socketio.on('connect')
+def authenticate_socket(auth=None):
+    """Canli konusma olaylarini yalniz uygulama istemcilerine ac."""
+    supplied = str(auth.get('token') or '') if isinstance(auth, dict) else ''
+    if not hmac.compare_digest(supplied, APP_TOKEN):
+        return False
+
 # Logging Setup
 def setup_logging():
     """Logging sistemi kur"""
@@ -1406,6 +1413,7 @@ class OpenAIResponder:
         self._config_lock = threading.RLock()
         self._connection_test_lock = threading.Lock()
         self._verified_api_key = None
+        self._verified_anthropic_api_key = None
         self._api_key_status = 'missing'
         # Çeviri için kullanıcı resmi OpenAI ile reseller arasında ayrıca seçim yapar.
         self.translation_provider = "openai_reseller"
@@ -1565,6 +1573,8 @@ class OpenAIResponder:
                 self.response_provider = normalized_provider
                 if normalized_provider == 'anthropic':
                     self.anthropic_api_key = normalized_key
+                    if self._verified_anthropic_api_key != normalized_key:
+                        self._verified_anthropic_api_key = None
                     self._anthropic_api_key_status = 'checking' if normalized_key else 'missing'
                 else:
                     self.api_key = normalized_key
@@ -1634,6 +1644,8 @@ class OpenAIResponder:
                 if selected == 'anthropic':
                     request_key = self.anthropic_api_key
                     status_attr = '_anthropic_api_key_status'
+                    if request_key and self._verified_anthropic_api_key == request_key:
+                        return True
                 else:
                     request_key = self.api_key
                     status_attr = '_api_key_status'
@@ -1664,8 +1676,11 @@ class OpenAIResponder:
                 valid = response.status_code == 200
                 with self._config_lock:
                     setattr(self, status_attr, 'valid' if valid else 'invalid')
-                    if valid and selected == 'openai_official':
-                        self._verified_api_key = request_key
+                    if valid:
+                        if selected == 'openai_official':
+                            self._verified_api_key = request_key
+                        else:
+                            self._verified_anthropic_api_key = request_key
                 if valid:
                     logger.info(f"{selected} baglanti basarili")
                     return True
@@ -2026,7 +2041,7 @@ class DeepLTranslator:
         if (not self.openai_responder
                 or not request_snapshot
                 or not request_snapshot.get("api_key")):
-            logger.warning("OpenAI çeviri atlandı: responder veya API key yok")
+            logger.warning("AI çeviri atlandı: responder veya API key yok")
             return None
 
         lang_names = {
@@ -2257,7 +2272,8 @@ class SpeakerDiarizer:
 
             # Konuşmacı segmentlerini analiz et
             speaker_durations = {}
-            for turn, _, speaker in diarization.itertracks(yield_label=True):
+            annotation = getattr(diarization, 'speaker_diarization', diarization)
+            for turn, _, speaker in annotation.itertracks(yield_label=True):
                 if speaker not in speaker_durations:
                     speaker_durations[speaker] = 0
                 speaker_durations[speaker] += turn.duration
@@ -2328,6 +2344,8 @@ class MicRecorder:
         self.thread = None
         self.device_index = None
         self._captured_samples = 0
+        self._start_event = threading.Event()
+        self._start_error = None
 
     def start(self, device_index=None):
         """Kayda basla. Basariyla baslatildiysa True, reddedildiyse
@@ -2345,10 +2363,16 @@ class MicRecorder:
             self.frames = []
             self._captured_samples = 0
         self.device_index = device_index
+        self._start_event.clear()
+        self._start_error = None
         self.thread = threading.Thread(target=self._record)
         self.thread.daemon = True
         self.thread.start()
-        return True
+        if not self._start_event.wait(timeout=5.0):
+            logger.error("Mikrofon cihazı 5 saniyede açılamadı")
+            self.is_recording = False
+            return False
+        return bool(self.is_recording and self.stream is not None and not self._start_error)
 
     def _record(self):
         try:
@@ -2395,6 +2419,7 @@ class MicRecorder:
                 input_device_index=mic_index,
                 frames_per_buffer=1024
             )
+            self._start_event.set()
 
             while self.is_recording:
                 try:
@@ -2431,8 +2456,10 @@ class MicRecorder:
                     logger.error(f"Error reading mic stream: {e}")
                     break
         except Exception as e:
+            self._start_error = str(e)
             logger.error(f"Mic recorder error: {e}")
         finally:
+            self._start_event.set()
             self.stop_stream()
             # Mikrofon akisi bekleniyorken kopmus/hata vermis olabilir (BT kulakligin
             # kapanmasi vb.) — bu durumda is_recording ONCEDEN True kalirdi ve bir
@@ -2516,6 +2543,7 @@ class WhisperWebTranscriber:
         self.is_running = False
         self.is_paused = False  # Beklet: giris sesini al/durdur (oturum canli kalir)
         self.ptt_active = False  # Push-to-talk: tus basili tutuldukca sesi biriktir, birakinca transkribe et
+        self._ptt_sequences = {}
         # Yakalama modu: 'system' = karsi tarafi dinle (sistem sesi, varsayilan),
         # 'mic' = kendi mikrofonumu dikte et (duz metin, ceviri/AI akisi yok).
         self.capture_mode = DEFAULTS['capture_mode']
@@ -2697,6 +2725,10 @@ class WhisperWebTranscriber:
             logger.info("OPENAI_API_KEY .env dosyasinda bulunamadi")
 
         anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
+        anthropic_translation_key = os.environ.get("ANTHROPIC_TRANSLATION_API_KEY")
+        if anthropic_translation_key:
+            with self.openai_responder._config_lock:
+                self.openai_responder.translation_api_keys['anthropic'] = anthropic_translation_key
         if anthropic_api_key:
             with self.openai_responder._config_lock:
                 self.openai_responder.anthropic_api_key = anthropic_api_key
@@ -3010,7 +3042,10 @@ class WhisperWebTranscriber:
         }
 
         counts = {key: 0 for key in ranges}
+        alphabetic_count = sum(1 for ch in text if ch.isalpha())
         for ch in text:
+            if not ch.isalpha():
+                continue
             cp = ord(ch)
             for key, (lo, hi) in ranges.items():
                 if lo <= cp <= hi:
@@ -3021,6 +3056,8 @@ class WhisperWebTranscriber:
         total = sum(counts.values())
         if total < 1:
             return None  # Latin agirlikli — degisiklik yapma
+        if alphabetic_count and total / alphabetic_count < 0.30:
+            return None  # Tek yabanci harf uzun Latin metni ele gecirmesin
 
         if counts['ja_kana'] and counts['ja_kana'] + counts['zh_han'] >= total * 0.5:
             return 'ja'
@@ -3263,6 +3300,7 @@ class WhisperWebTranscriber:
             # nesnesi serbest birakilirsa use-after-free/native cokme olur. Swap'i
             # _model_lock altinda yapip eskiyi kilit disinda birakiriz (asagida).
             new_model = None
+            gpu_fallback_error = None
             if use_gpu:
                 try:
                     logger.info(f"GPU: {model_name} modeli yukleniyor...")
@@ -3278,6 +3316,7 @@ class WhisperWebTranscriber:
                     if self.current_model is not None and ('out of memory' in str(exc).lower() or 'oom' in str(exc).lower()):
                         return {'success': False, 'error': 'Yeni GPU modeli mevcut modelle birlikte belleğe sığmadı. Mevcut model korundu. Daha küçük model seçin veya uygulamayı yeniden başlatıp istediğiniz modeli yükleyin.'}
                     logger.warning('GPU modeli yuklenemedi; CPU deneniyor: %s', exc)
+                    gpu_fallback_error = str(exc)
                     use_gpu = False
 
             if not use_gpu:
@@ -3311,7 +3350,12 @@ class WhisperWebTranscriber:
             ).start()
 
             logger.info(f"Model yuklendi: {model_name} ({device})")
-            return {'success': True, 'device': device}
+            return {
+                'success': True, 'device': device,
+                'gpu_fallback': bool(gpu_fallback_error),
+                'gpu_error': ('GPU modeli yüklenemedi; CPU kullanılıyor.'
+                              if gpu_fallback_error else None),
+            }
 
         except Exception as e:
             err_msg = str(e)
@@ -3541,10 +3585,16 @@ class WhisperWebTranscriber:
             if settings:
                 self.update_settings(settings)
 
+            previous_language = self.whisper_language
+            previous_mode = self.capture_mode
+            if capture_mode == 'mic':
+                whisper_language = 'tr'
             if whisper_language == 'auto':
                 self.whisper_language = None
             else:
                 self.whisper_language = whisper_language
+            if previous_language != self.whisper_language or previous_mode != capture_mode:
+                self.context_buffer.clear()
             self.diarizer.enabled = speaker_diarization
 
             # Onceki oturumdan kalan ses chunk'larini temizle (stale audio sizmasin)
@@ -4232,7 +4282,8 @@ class WhisperWebTranscriber:
                     commit_lock_held = True
 
                     # Context buffer'a ekle (Whisper initial_prompt icin; degismedi)
-                    self.context_buffer.append(full_text)
+                    if self.capture_mode == 'system':
+                        self.context_buffer.append(full_text)
 
                     # AI cevap-baglami hafizasi: capture_mode='system' ise KARSI
                     # TARAF konustu, 'mic' ise BEN dikte ettim.
@@ -4312,7 +4363,7 @@ class WhisperWebTranscriber:
                     # None kalir; dogru anahtari saglayiciya gore kontrol et (aksi halde
                     # OpenAI ceviri sessizce hic calismazdi).
                     if translation_request['provider'] in {
-                            'openai', 'openai_reseller', 'openai_official'}:
+                            'anthropic', 'openai', 'openai_reseller', 'openai_official'}:
                         has_key = bool(
                             (translation_request.get('openai') or {}).get('api_key')
                         )
@@ -4771,11 +4822,15 @@ def deepl_config():
     if provider not in {'deepl', 'anthropic', 'openai_reseller', 'openai_official'}:
         return jsonify({'success': False, 'error': 'Geçersiz çeviri sağlayıcısı'})
 
-    with transcriber.translator._config_lock:
-        transcriber.translator.provider = provider
+    if provider == 'deepl' and api_key:
+        candidate_key = str(api_key).strip()
+        if not transcriber.translator.test_api(candidate_key):
+            return jsonify({'success': False, 'error': 'API key gerekli veya geçersiz'})
 
+    with transcriber.translator._config_lock:
         if provider in {'anthropic', 'openai_reseller', 'openai_official'}:
             transcriber.openai_responder.configure_translation(provider, api_key)
+            transcriber.translator.provider = provider
             if api_key:
                 success = bool(
                     transcriber.openai_responder.translation_is_configured(provider)
@@ -4786,7 +4841,8 @@ def deepl_config():
                 success = False
         elif api_key:
             transcriber.translator.api_key = str(api_key).strip() or None
-            success = False
+            transcriber.translator.provider = provider
+            success = True
         else:
             # Kullanici alani temizlediyse backend eski gizli anahtarla ceviriye
             # devam etmesin; silme islemi de gercekten bellekte uygulansin.
@@ -4800,10 +4856,6 @@ def deepl_config():
             'message': ('Anahtar kaydedildi; bağlantı henüz doğrulanmadı.' if configured
                         else 'Çeviri anahtarı kaldırıldı; sağlayıcı yapılandırılmamış.'),
         })
-    if provider == 'deepl' and api_key:
-        # Ag testi tum canli ceviri snapshot'larini bekletmemeli; bu istegin
-        # anahtari, eszamanli ayar degisiminden bagimsiz test edilir.
-        success = transcriber.translator.test_api(str(api_key).strip())
     if success:
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'API key gerekli veya geçersiz'})
@@ -4813,19 +4865,33 @@ def translation_settings():
     """Çeviri ayarları"""
     data = request.json or {}
     
+    enabled = data.get('enabled', False)
+    source_lang = data.get('sourceLang', 'TR')
+    target_lang = data.get('targetLang', 'EN')
+    allowed_translation_langs = {
+        'AUTO', 'TR', 'EN', 'DE', 'JA', 'ZH', 'AR', 'FR', 'ES', 'IT',
+        'RU', 'KO', 'PT', 'DA', 'SV', 'EL', 'KA', 'SK', 'AZ', 'FI'
+    }
+    if type(enabled) is not bool:
+        return jsonify({'success': False, 'error': 'enabled boolean olmalı'}), 400
+    if (not isinstance(source_lang, str) or source_lang.upper() not in allowed_translation_langs
+            or not isinstance(target_lang, str) or target_lang.upper() not in allowed_translation_langs):
+        return jsonify({'success': False, 'error': 'Geçersiz çeviri dili'}), 400
+
     provider = str(data.get('provider', 'deepl') or 'deepl').strip().lower()
     if provider == 'openai':
         provider = 'openai_reseller'
     if provider not in {'deepl', 'anthropic', 'openai_reseller', 'openai_official'}:
-        provider = 'deepl'
+        return jsonify({'success': False, 'error': 'Geçersiz çeviri sağlayıcısı'}), 400
     with transcriber.translator._config_lock:
-        transcriber.translator.enabled = bool(data.get('enabled', False))
+        transcriber.translator.enabled = enabled
         transcriber.translator.provider = provider
-        transcriber.translator.source_lang = data.get('sourceLang', 'TR')
-        transcriber.translator.target_lang = data.get('targetLang', 'EN')
+        transcriber.translator.source_lang = source_lang.upper()
+        transcriber.translator.target_lang = target_lang.upper()
 
         if provider in {'anthropic', 'openai_reseller', 'openai_official'}:
-            transcriber.openai_responder.configure_translation(provider, data.get('apiKey'))
+            if 'apiKey' in data:
+                transcriber.openai_responder.configure_translation(provider, data.get('apiKey'))
             if data.get('apiKey'):
                 transcriber.openai_responder.enabled = True
         elif 'apiKey' in data:
@@ -4900,7 +4966,17 @@ def push_to_talk():
     segment olarak transkribe edilir."""
     data = request.json or {}
     with transcriber._lifecycle_lock:
-        active = bool(data.get('active', False))
+        if type(data.get('active')) is not bool:
+            return jsonify({'success': False, 'error': 'active boolean olmalı'}), 400
+        active = data['active']
+        source = str(data.get('source') or 'renderer')[:32]
+        sequence = data.get('sequence')
+        if type(sequence) is int:
+            previous = transcriber._ptt_sequences.get(source, -1)
+            if sequence <= previous:
+                return jsonify({'success': True, 'ptt': transcriber.ptt_active,
+                                'stale': True})
+            transcriber._ptt_sequences[source] = sequence
         if active and not transcriber.is_running:
             return jsonify({'success': False, 'error': 'Önce ses yakalamayı başlatın'}), 409
         transcriber.ptt_active = active
@@ -5032,9 +5108,16 @@ def _schedule_mic_slot_guard(recording_id):
 def process_mic_audio(
         audio_data, target_lang, result_generation=None,
         translation_request=None, recording_id=None):
+    def emit_stale_result():
+        socketio.emit('ptt_mic_result', {
+            'recording_id': recording_id, 'success': False,
+            'error': 'Oturum sıfırlandı; kayıt işlenemedi.'
+        })
+
     try:
         if (result_generation is not None
                 and result_generation != transcriber._result_generation):
+            emit_stale_result()
             return
         if not transcriber.current_model:
             logger.error("No model loaded for mic transcription")
@@ -5092,7 +5175,7 @@ def process_mic_audio(
         if target_lang == 'tr':
             translation = full_text
         elif (translation_request.get('provider') in {
-                'openai', 'openai_reseller', 'openai_official'}
+                'anthropic', 'openai', 'openai_reseller', 'openai_official'}
                 and openai_request.get('api_key')):
             # Sabit kurallar basta, degisken METIN sonda: ayni hedef dilde OpenAI
             # otomatik prompt onbellegi sabit on-eki cache'ler (daha hizli yanit).
@@ -5168,6 +5251,7 @@ def process_mic_audio(
         # konuşmaya veya arayüze ekleme.
         if (result_generation is not None
                 and result_generation != transcriber._result_generation):
+            emit_stale_result()
             return
 
         # Emit the result
@@ -5184,6 +5268,7 @@ def process_mic_audio(
         with transcriber._lifecycle_lock:
             if (result_generation is not None
                     and result_generation != transcriber._result_generation):
+                emit_stale_result()
                 return
             transcriber._next_transcription_id += 1
             result['id'] = transcriber._next_transcription_id
@@ -5387,7 +5472,7 @@ def correct_transcription(transcript_id):
                 turn['text'] = text
         transcriber.context_buffer.clear()
         transcriber.context_buffer.extend(r['text'] for r in list(transcriber.transcriptions)[-10:]
-                                         if r.get('source') != 'ptt' and r.get('text'))
+                                         if r.get('source') == 'system' and r.get('text'))
         session, generation = transcriber._session_id, transcriber._result_generation
         # Düzeltme olayı çeviri işinden önce yayılır; UI eski çeviriyi önce kaldırır.
         socketio.emit('transcription_corrected', dict(record))
@@ -5492,6 +5577,8 @@ def mark_said():
     turkish = str(data.get('turkish', '') or '').strip()
     if not text:
         return jsonify({'success': False, 'error': 'Metin gerekli'})
+    if len(text) > 4000 or len(turkish) > 4000:
+        return jsonify({'success': False, 'error': 'Metin çok uzun'}), 400
     with transcriber._lifecycle_lock:
         transcriber.conversation_turns.append({
             'role': 'me', 'text': text, 'turkish': turkish or None,
@@ -5502,7 +5589,9 @@ def mark_said():
 def ai_response_toggle():
     """AI Response önerilerini aç/kapat"""
     data = request.json or {}
-    transcriber.openai_responder.enabled = data.get('enabled', False)
+    if type(data.get('enabled')) is not bool:
+        return jsonify({'success': False, 'error': 'enabled boolean olmalı'}), 400
+    transcriber.openai_responder.enabled = data['enabled']
     return jsonify({'success': True, 'enabled': transcriber.openai_responder.enabled})
 
 @app.route('/api/partial_toggle', methods=['POST'])
@@ -5591,8 +5680,15 @@ def generate_ai_response():
     if response_length not in ('short', 'normal', 'detailed'):
         return jsonify({'success': False, 'error': 'Geçersiz cevap uzunluğu'}), 400
 
-    if not text:
-        return jsonify({'success': False, 'error': 'Metin gerekli'})
+    allowed_target_langs = set(transcriber._LANG_INITIAL_PROMPTS) | {'auto', 'tr'}
+    if mode not in {'answer', 'translate', 'translate_dual'}:
+        return jsonify({'success': False, 'error': 'Geçersiz AI modu'}), 400
+    if tone not in {'resmi', 'gunluk', 'arkadasca'}:
+        return jsonify({'success': False, 'error': 'Geçersiz cevap tonu'}), 400
+    if not isinstance(text, str) or not text.strip():
+        return jsonify({'success': False, 'error': 'Metin gerekli'}), 400
+    if not isinstance(target_lang, str) or target_lang not in allowed_target_langs:
+        return jsonify({'success': False, 'error': 'Geçersiz hedef dil'}), 400
 
     # Girdi sinirla: cok uzun metin bellek/API maliyetini sismitir. Hata donmek
     # yerine kirp; canli akista uzun transkript gelebilir, hizmeti kesmek kotu UX.
@@ -6199,8 +6295,13 @@ def ai_chat():
     else:
         question = ''
 
-    if not transcriber.openai_responder.api_key:
-        return jsonify({'success': False, 'error': 'OpenAI API anahtari gerekli'})
+    with transcriber.openai_responder._config_lock:
+        response_provider = transcriber.openai_responder.response_provider
+        response_key = (transcriber.openai_responder.anthropic_api_key
+                        if response_provider == 'anthropic'
+                        else transcriber.openai_responder.api_key)
+    if not response_key:
+        return jsonify({'success': False, 'error': 'Seçili AI sağlayıcısı için API anahtarı gerekli'})
 
     # Son transkriptleri baglam olarak topla
     recent_records = transcriber.get_transcriptions_snapshot(limit=30)
@@ -6241,11 +6342,11 @@ if __name__ == '__main__':
     logger.info("="*60)
     logger.info("WHISPER + DEEPL + KONUŞMACI TANIMA + CONTEXT CARRY-OVER")
     logger.info("="*60)
-    logger.info("ğŸâ€â€ž Context Carry-over özelliği eklendi!")
+    logger.info("Context Carry-over özelliği etkin")
     logger.info("   Son 10 konuşma bağlam olarak kullanılır")
     logger.info("")
-    logger.info("ğŸŒÂ Model dil seçimi eklendi (Türkçe, İngilizce, Almanca)")
-    logger.info("ğŸŒÂ DeepL çeviri toggle ile açılıp kapanabilir")
+    logger.info("Model dil seçimi etkin")
+    logger.info("Çeviri açılıp kapatılabilir")
     logger.info("")
     logger.info("Tarayıcınızda açın: http://localhost:5000")
     logger.info("")

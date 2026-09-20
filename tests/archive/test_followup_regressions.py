@@ -81,7 +81,10 @@ class FollowupRegressions(unittest.TestCase):
             return 'Hello'
         with patch.object(transcriber, 'capture_thread', None), patch.object(transcriber, 'transcribe_thread', None), patch.object(transcriber, '_close_active_audio_stream'), patch.object(transcriber, '_drain_audio_queue'), patch.object(transcriber, 'is_running', True), patch.object(transcriber, '_result_generation', 91), patch.object(transcriber, '_session_id', 100), patch.object(transcriber, 'current_model', fake_model), patch.object(transcriber.translator, 'translate', side_effect=delayed_translation), patch.object(b.socketio, 'emit') as emit, patch.object(b, '_append_transcript') as write:
             b.process_mic_audio(b.np.ones(1600, dtype=b.np.int16), 'en', 91, {'provider': 'deepl'})
-            emit.assert_not_called()
+            emit.assert_called_once_with('ptt_mic_result', {
+                'recording_id': None, 'success': False,
+                'error': 'Oturum sıfırlandı; kayıt işlenemedi.'
+            })
             write.assert_not_called()
 
     def test_quiet_split_tiny_buffers(self):

@@ -3,7 +3,6 @@
 const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
-const { spawnSync } = require('child_process');
 const path = require('path');
 const html = fs.readFileSync(path.join(__dirname, 'templates/index.html'), 'utf8');
 const overlay = fs.readFileSync(path.join(__dirname, 'templates/overlay.html'), 'utf8');
@@ -28,8 +27,7 @@ for (const file of ['index.html', 'overlay.html']) {
     assert(blocks.length > 0);
     for (const block of blocks) {
         const code = block[1].replace(/\{\{\s*app_token\s*\|\s*tojson\s*\}\}/g, '"test-token"');
-        const result = spawnSync(process.execPath, ['--check', '-'], { input: code, encoding: 'utf8' });
-        assert.strictEqual(result.status, 0, `${file}: ${result.stderr}`);
+        assert.doesNotThrow(() => new vm.Script(code, {filename: file}), undefined, file);
     }
 }
 const textContext = vm.createContext({ escapeHtml: String, escapeJsString: String });

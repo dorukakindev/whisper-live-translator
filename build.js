@@ -90,7 +90,9 @@ function scanForLeaks(rootDir, sourceMode = false) {
       } else {
         const rel = path.relative(rootDir, full).replace(/\\/g, '/');
         const isThirdParty = rel.split('/').includes('node_modules');
-        const allowedLocal = sourceMode && allowedLocalFiles.has(rel);
+        const allowedLocal = sourceMode && (
+          allowedLocalFiles.has(rel) || /^transcriptions\.txt\.\d+$/i.test(rel)
+        );
         if (!isThirdParty && !allowedLocal
             && (SUSPECT_PATTERNS.some((re) => re.test(entry.name))
                 || /^1\s*saat\.txt$/i.test(entry.name))) {
