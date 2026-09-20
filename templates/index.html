@@ -5160,6 +5160,7 @@
         let pttHeld = false;
         let pttPendingTimer = null;  // Ctrl'e basildiktan sonra PTT'yi GERCEKTEN baslatan gecikme
         let pttCommandSequence = 0;
+        const pttClientId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
         let pttCommandChain = Promise.resolve();
         function setPtt(active) {
             const sequence = ++pttCommandSequence;
@@ -5167,7 +5168,7 @@
                 method: 'POST',
                 keepalive: true,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ active: active, source: 'renderer', sequence })
+                body: JSON.stringify({ active: active, source: 'renderer', sequence, client: pttClientId })
             })).then(async response => {
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok || !data.success) {
@@ -5353,7 +5354,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         active: false, source: 'renderer',
-                        sequence: ++pttCommandSequence
+                        sequence: ++pttCommandSequence, client: pttClientId
                     })
                 }).catch(() => {});
             }

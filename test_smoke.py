@@ -1749,11 +1749,18 @@ def test_verified_report_regressions():
     try:
         transcriber.is_running = True
         client.post('/api/ptt', json={
-            'active': False, 'source': 'smoke', 'sequence': 2})
+            'active': False, 'source': 'smoke', 'sequence': 2,
+            'client': 'first-page'})
         stale = client.post('/api/ptt', json={
-            'active': True, 'source': 'smoke', 'sequence': 1}).get_json()
+            'active': True, 'source': 'smoke', 'sequence': 1,
+            'client': 'first-page'}).get_json()
         check(stale.get('stale') is True and transcriber.ptt_active is False,
               'gecikmis PTT start komutu stop sonrasinda uygulandi')
+        reloaded = client.post('/api/ptt', json={
+            'active': True, 'source': 'smoke', 'sequence': 1,
+            'client': 'reloaded-page'}).get_json()
+        check(reloaded.get('stale') is not True and transcriber.ptt_active is True,
+              'sayfa yenilendikten sonra PTT komutu stale sayildi')
     finally:
         transcriber.is_running = old_running
         transcriber.ptt_active = old_ptt
