@@ -2526,6 +2526,7 @@ class WhisperWebTranscriber:
         self.is_paused = False  # Beklet: giris sesini al/durdur (oturum canli kalir)
         self.ptt_active = False  # Push-to-talk: tus basili tutuldukca sesi biriktir, birakinca transkribe et
         self._ptt_sequences = {}
+        self._ptt_retired_clients = {}
         # Yakalama modu: 'system' = karsi tarafi dinle (sistem sesi, varsayilan),
         # 'mic' = kendi mikrofonumu dikte et (duz metin, ceviri/AI akisi yok).
         self.capture_mode = DEFAULTS['capture_mode']
@@ -4958,11 +4959,17 @@ def push_to_talk():
         if type(sequence) is int:
             previous_client, previous = transcriber._ptt_sequences.get(source, (None, -1))
             same_client = previous_client == client
+            retired = transcriber._ptt_retired_clients.setdefault(source, deque(maxlen=64))
             if ((same_client and sequence <= previous)
-                    or (not same_client and previous_client is not None and not active)):
+                    or (not same_client and (client in retired
+                                             or (previous_client is not None and not active)))):
                 return jsonify({'success': True, 'ptt': transcriber.ptt_active,
                                 'stale': True})
-            # Yeni istemci PTT'yi yalnızca başlatma komutuyla devralabilir.
+            # Yeni istemci PTT'yi yalnızca baslatma komutuyla devralabilir. Bir
+            # kez emekliye ayrilan sayfanin gec active:true istegi de yeni
+            # sayfadan sahipligi geri alamaz.
+            if not same_client and previous_client is not None:
+                retired.append(previous_client)
             transcriber._ptt_sequences[source] = (client, sequence)
         if active and not transcriber.is_running:
             return jsonify({'success': False, 'error': 'Önce ses yakalamayı başlatın'}), 409

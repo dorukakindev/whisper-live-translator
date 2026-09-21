@@ -1746,6 +1746,10 @@ def test_verified_report_regressions():
     old_running = transcriber.is_running
     old_ptt = transcriber.ptt_active
     old_sequences = dict(transcriber._ptt_sequences)
+    old_retired = {
+        source: buyedektir.deque(clients, maxlen=clients.maxlen)
+        for source, clients in transcriber._ptt_retired_clients.items()
+    }
     try:
         transcriber.is_running = True
         client.post('/api/ptt', json={
@@ -1766,6 +1770,11 @@ def test_verified_report_regressions():
             'client': 'first-page'}).get_json()
         check(old_stop.get('stale') is True and transcriber.ptt_active is True,
               'eski sayfanin gec stop komutu yeni sayfanin PTT tutusunu kesti')
+        old_start = client.post('/api/ptt', json={
+            'active': True, 'source': 'smoke', 'sequence': 4,
+            'client': 'first-page'}).get_json()
+        check(old_start.get('stale') is True and transcriber.ptt_active is True,
+              'emekli sayfanin gec start komutu PTT sahipligini geri aldi')
         client.post('/api/ptt', json={
             'active': False, 'source': 'smoke', 'sequence': 2,
             'client': 'reloaded-page'})
@@ -1775,6 +1784,7 @@ def test_verified_report_regressions():
         transcriber.is_running = old_running
         transcriber.ptt_active = old_ptt
         transcriber._ptt_sequences = old_sequences
+        transcriber._ptt_retired_clients = old_retired
 
 
 def test_anthropic_provider_contract():

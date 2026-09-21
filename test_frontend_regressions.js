@@ -15,6 +15,9 @@ const htmlUtilsContext = vm.createContext({});
 vm.runInContext(htmlUtils, htmlUtilsContext);
 assert.strictEqual(htmlUtilsContext.escapeHtml('<a & "b">'), '&lt;a &amp; &quot;b&quot;&gt;');
 assert(overlay.includes("event.key === 'theme'"));
+assert(html.includes('const pttClientId ='));
+assert((html.match(/client:\s*pttClientId/g) || []).length >= 2,
+    'PTT istemci kimligi normal ve unload komutlarinda gonderilmeli');
 function between(from, to) {
     const start = html.indexOf(from);
     const end = html.indexOf(to, start + from.length);
