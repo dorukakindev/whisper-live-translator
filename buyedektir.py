@@ -2570,6 +2570,10 @@ class WhisperWebTranscriber:
         self._active_audio_stream = None
         self._active_audio_p = None
         self._session_id = 0  # her capture oturumuna artan kimlik; eski thread sizintisini engeller
+        # /api/start icin sinirli hazirlik el sikismasi: capture thread stream'i
+        # gercekten acana (veya erken hata verene) kadar start yaniti bekletilir.
+        # Her start altinda yeni dict olusur; eski nesil thread kendi nesnesine yazar.
+        self._capture_handshake = None
         # Stop/Sifirla, Whisper veya ceviri cagrisi icinde bekleyen eski sonuclari
         # gecersiz kilar. Clear yakalama devam ederken de kullanilabildigi icin bu
         # sayac capture session kimliginden ayridir.
@@ -2677,6 +2681,10 @@ class WhisperWebTranscriber:
         # yoldan zorla kuyruga konur; boylece bellek ve transcribe suresi sinirli
         # kalir (uzun monolog/muzik ayri satirlara bolunur).
         self.MAX_UTTERANCE_S = 15.0
+        # /api/start'in capture thread'in stream acimini bekledigi ust sinir.
+        # Bluetooth/surucu takilmalari bu pencerede hata olarak doner; thread
+        # yine de takili kalirsa sonraki start is_alive korumasiyla reddeder.
+        self.CAPTURE_START_TIMEOUT_S = 15.0
         # MAX_UTTERANCE_S zorunlu bolmesi tam 25. saniyeye denk gelirse kelimeyi
         # ORTADAN kesebilir. Bunun yerine tamponun SON bu kadar saniyelik
         # penceresinde en dusuk enerjili (en sessiz = dogal duraklama) chunk
@@ -2918,6 +2926,7 @@ class WhisperWebTranscriber:
                 'capture_mode': self.capture_mode,
                 'partial_enabled': self.partial_enabled,
                 'total_transcriptions': self.stats['total_transcriptions'],
+                'session_id': self._session_id,
                 'stats': dict(self.stats),
                 'partial_interval_s': round(self._partial_interval_current, 2),
                 'partial_snapshot_s': round(self._partial_snapshot_s_current, 2),
@@ -3566,11 +3575,11 @@ class WhisperWebTranscriber:
             speaker_diarization = False
         with self._lifecycle_lock:
             if self._result_generation != start_generation:
-                return False, 'Baslatma beklerken oturum durduruldu veya sifirlandi'
+                return False, 'Baslatma beklerken oturum durduruldu veya sifirlandi', None
             if self._audio_test_active:
-                return False, 'Ses testi sürüyor; birkaç saniye sonra tekrar deneyin'
+                return False, 'Ses testi sürüyor; birkaç saniye sonra tekrar deneyin', None
             if self._stop_in_progress:
-                return False, 'Onceki yakalama oturumu hala kapaniyor'
+                return False, 'Onceki yakalama oturumu hala kapaniyor', None
             if self.is_running:
                 capture_alive = bool(self.capture_thread and self.capture_thread.is_alive())
                 transcribe_alive = bool(self.transcribe_thread and self.transcribe_thread.is_alive())
@@ -3579,7 +3588,7 @@ class WhisperWebTranscriber:
                     self.is_running = False
                     self._drain_audio_queue()
                 else:
-                    return False, 'Yakalama zaten calisiyor'
+                    return False, 'Yakalama zaten calisiyor', None
             # Onceki oturum thread'leri (uzun transcribe sirasinda Stop+Start olursa
             # join timeout olmus olabilir) hala canliysa yeni oturum baslatma.
             if (self.capture_thread and self.capture_thread.is_alive()) or \
@@ -3589,9 +3598,9 @@ class WhisperWebTranscriber:
                 # Bu kilit capture thread'in finally blogunda da kullanilir. Burada
                 # join etmek kilit dongusu yaratir; kilidi birakip istemcinin kisa
                 # sure sonra yeniden denemesine izin ver.
-                return False, 'Onceki yakalama oturumu hala kapaniyor'
+                return False, 'Onceki yakalama oturumu hala kapaniyor', None
             if not self.current_model:
-                return False, 'Once model yukleyin'
+                return False, 'Once model yukleyin', None
 
             if settings:
                 self.update_settings(settings)
@@ -3637,6 +3646,7 @@ class WhisperWebTranscriber:
             self._session_monotonic_start = time.monotonic()
             self.stats['session_start'] = datetime.now().astimezone().isoformat(timespec='milliseconds')
 
+            self._capture_handshake = {'event': threading.Event(), 'error': None}
             # Thread'leri başlat (session_id ile; eski thread yeni oturuma sizmaz)
             self.capture_thread = threading.Thread(target=self._capture_audio, args=(device_id, session_id))
             self.transcribe_thread = threading.Thread(target=self._transcribe_audio, args=(session_id,))
@@ -3644,7 +3654,19 @@ class WhisperWebTranscriber:
             self.transcribe_thread.daemon = True
             self.capture_thread.start()
             self.transcribe_thread.start()
-            return True, None
+            handshake = self._capture_handshake
+
+        # Kilit serbestken sinirli el sikismasi: cihaz/stream gercekten acilmadan
+        # 'success' donme — aksi halde cihaz-acma hatasi API'de basari gibi
+        # gorunuyor ve UI yalnizca soket olayindan ogreniyordu.
+        if not handshake['event'].wait(self.CAPTURE_START_TIMEOUT_S):
+            _record_health_error('capture_start_timeout')
+            logger.error('Ses cihazi acma el sikismasi zaman asimina ugradi')
+            self.stop_capture()
+            return False, 'Ses cihazı açılamadı (zaman aşımı)', None
+        if handshake['error']:
+            return False, handshake['error'], None
+        return True, None, session_id
 
     def stop_capture(self):
         """Ses yakalamayı durdur"""
@@ -3756,6 +3778,9 @@ class WhisperWebTranscriber:
         p = None  # PyAudio() ctor patlarsa finally yine de calissin (capture_stopped emit edilsin)
         stream = None  # p.open() patlarsa finally'deki stream.close() NameError vermesin
         stream_registered = False
+        # Bu oturumun el sikisma nesnesi (start_capture bunu bekliyor).
+        handshake = self._capture_handshake
+        end_reason = 'stopped'  # finally'deki capture_stopped nedenini tasir
 
         try:
             p = pyaudio.PyAudio()
@@ -3784,14 +3809,22 @@ class WhisperWebTranscriber:
             # capture_started olayi yeni UI durumunu bozamamali.
             with self._lifecycle_lock:
                 if session_id != self._session_id or not self.is_running:
+                    # Stream gec acti ama oturum artik olulu — start bekleyicisi
+                    # sonsuza dek beklemesin diye el sikismayi hatayla isaretle.
+                    if handshake is not None:
+                        handshake['error'] = 'Başlatma beklerken yakalama oturumu kapandı'
+                        handshake['event'].set()
                     return
                 self._active_audio_stream = stream
                 self._active_audio_p = p
                 stream_registered = True
                 socketio.emit('capture_started', {
                     'device': device_info['name'] if device_info else 'Varsayılan',
-                    'status': 'active'
+                    'status': 'active',
+                    'session_id': session_id
                 })
+                if handshake is not None:
+                    handshake['event'].set()
             
             audio_buffer = []
             silence_counter = 0
@@ -4089,6 +4122,7 @@ class WhisperWebTranscriber:
                             f"Ses cihazi ardisik {consecutive_errors} kez okuma hatasi verdi "
                             f"(son hata: {e}); yakalama durduruluyor."
                         )
+                        end_reason = 'error'
                         socketio.emit('error', {'message': 'Ses cihazı koptu, yakalama durduruldu.'})
                         break
                     # Cihaz gercekten kopmussa hemen tekrar denemek CPU'yu bosa
@@ -4097,8 +4131,14 @@ class WhisperWebTranscriber:
                     continue
             
         except Exception as e:
+            end_reason = 'error'
             _record_health_error('capture_failed')
             logger.error(f"Ses yakalama hatasi: {e}", exc_info=True)
+            # Stream henuz acilmamissa bekleyen /api/start cagrisina hata dondur;
+            # acilmis (hazir) oturumda el sikismasina dokunma.
+            if handshake is not None and not handshake['event'].is_set():
+                handshake['error'] = f'Ses cihazı açılamadı veya okunamadı: {e}'
+                handshake['event'].set()
             socketio.emit('error', {
                 'message': 'Ses yakalama sırasında beklenmeyen bir hata oluştu.'
             })
@@ -4118,8 +4158,14 @@ class WhisperWebTranscriber:
                 if self._session_id == session_id:
                     self.is_running = False
                     # Eski oturumun kapanışı, hızlı bir stop+start sonrasında yeni
-                    # oturumu UI'da yanlışlıkla "Durduruldu" göstermemeli.
-                    socketio.emit('capture_stopped', {'status': 'stopped'})
+                    # oturumu UI'da yanlışlıkla "Durduruldu" göstermemeli; ayrica
+                    # frontend kendi oturum kimligiyle eslestirerek gecikmis bir
+                    # olayi yeni oturuma uygulayamaz.
+                    socketio.emit('capture_stopped', {
+                        'status': 'stopped',
+                        'session_id': session_id,
+                        'reason': end_reason
+                    })
 
     def _finish_diarization(
             self, future, transcription_id, session_id, result_generation):
@@ -4946,10 +4992,10 @@ def start_capture():
     speaker_diarization = data.get('speaker_diarization', False)
     capture_mode = data.get('capture_mode', 'system')
 
-    success, error = transcriber.start_capture(
+    success, error, session_id = transcriber.start_capture(
         device_id, settings, whisper_language, speaker_diarization, capture_mode
     )
-    return jsonify({'success': success, 'error': error})
+    return jsonify({'success': success, 'error': error, 'session_id': session_id})
 
 @app.route('/api/stop', methods=['POST'])
 def stop_capture():
