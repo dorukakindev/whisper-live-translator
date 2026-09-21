@@ -1,5 +1,7 @@
 # Devir notları
 
+Güncel devir notu: [2026-09-21 14:59 — Devin PTT yenileme değişikliği doğrulaması ve yarış düzeltmesi](docs/devir/2026-09-21-1459.md).
+
 Güncel devir notu: [2026-09-20 15:40 — GitHub eşitlemesi ve doğrulanmış bug düzeltmeleri](docs/devir/2026-09-20-1540.md).
 
 Önceki devir notu: [2026-09-20 14:16 — bug raporu ikinci doğrulamayla revize edildi (errata + doğrulanmış düzeltme listesi)](docs/devir/2026-09-20-1416.md).
