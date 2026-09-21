@@ -1,6 +1,8 @@
 # Devir notları
 
-Güncel devir notu: [2026-09-21 17:32 — PR inceleme geri bildirimi: profil kaydında kayıp-güncelleme düzeltmesi](docs/devir/2026-09-21-1732.md).
+Güncel devir notu: [2026-09-21 18:20 — capture yaşam döngüsü denetimi + sahte 'dinleniyor' düzeltmesi](docs/devir/2026-09-21-1820.md).
+
+Önceki devir notu: [2026-09-21 17:32 — PR inceleme geri bildirimi: profil kaydında kayıp-güncelleme düzeltmesi](docs/devir/2026-09-21-1732.md).
 
 Önceki devir notu: [2026-09-21 16:20 — derin eş-zamanlılık denetimi ve doğrulanmış düzeltmeler](docs/devir/2026-09-21-1620.md).
 
