@@ -1902,6 +1902,8 @@ def main():
     ) + (
         # Es-zamanlilik/lifecycle audit paketi tests/ altinda kalici durur.
         os.path.join(os.path.dirname(__file__), 'tests', 'test_concurrency_audit.py'),
+        # Capture yasam dongusu (start el sikismasi + capture_stopped yayini).
+        os.path.join(os.path.dirname(__file__), 'tests', 'test_capture_lifecycle.py'),
     )
     child_env = os.environ.copy()
     child_env['PYTHONPATH'] = os.path.dirname(__file__) + os.pathsep + child_env.get('PYTHONPATH', '')
