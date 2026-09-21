@@ -2604,11 +2604,14 @@
         // capture_started/capture_stopped bunu tasiyinca eski oturumun gecikmis
         // olayi yeni oturuma uygulanamaz; eski payload'da alan yoksa uygulanir.
         let _captureSessionId = null;
-        // capture_stopped'i islenmis en son oturum. /api/start yaniti socket
-        // olaylarindan SONRA cozulebilir: stream 'hazir' olup thread aninda
-        // olurse stopped once gelir; yanit 'success' ise oturum zaten olu —
-        // bu durumda isCapturing'e geri donmemek icin kontrol edilir.
-        let _lastEndedSessionId = null;
+        // capture_stopped'i islenmis en son oturum ({id, instance}). /api/start
+        // yaniti socket olaylarindan SONRA cozulebilir: stream 'hazir' olup
+        // thread aninda olurse stopped once gelir; yanit 'success' ise oturum
+        // zaten olu — bu durumda isCapturing'e geri donmemek icin kontrol
+        // edilir. Backend instance'i degisince session_id sifirdan baslayabilir;
+        // kayit instance ile kapsanarak eski instance'in ended-id'si yeni
+        // backend'in ayni id'li oturumunu yanlislikla oldurmez.
+        let _lastEndedSession = null;
         let transcriptionTexts = {};  // Transcription metinlerini sakla
         const seenTranscriptionIds = new Set();
         let prunedTranscriptionId = -1;
@@ -3544,11 +3547,24 @@
                 // Gecikmis (eski oturum) durma olayi yeni oturumu kapatmamalidir.
                 if (data.session_id != null && _captureSessionId != null
                         && data.session_id !== _captureSessionId) return;
+                // Izlenen oturum yokken gelen stopped: ya duplicate ya da baska
+                // bir sayfanin/oturumun gecikmis olayi. isCapturing=false iken
+                // endCaptureSession cagirmak beklemedeki yeni /api/start
+                // generation'ini iptal eder (cancelCaptureStartRetries) — o
+                // yuzden yalnizca ended kaydi tut, temizligi atla.
+                if (!isCapturing) {
+                    if (data.session_id != null) {
+                        _lastEndedSession = {id: data.session_id,
+                                             instance: _backendInstanceId};
+                    }
+                    return;
+                }
                 // Tek merkezi, idempotent temizlik: butonlar, sayac, onizleme,
                 // Cockpit ve durum cubugu ayni yoldan gecer. Hata yolu zaten bir
                 // 'error' emit'iyle bildirim gosterdi; ikinci uyari spam olurdu.
-                _lastEndedSessionId = (data.session_id != null
-                    ? data.session_id : _captureSessionId);
+                _lastEndedSession = {id: (data.session_id != null
+                    ? data.session_id : _captureSessionId),
+                                     instance: _backendInstanceId};
                 if (data.reason === 'error') {
                     endCaptureSession('Yakalama hata ile durdu', null);
                 } else {
@@ -3930,9 +3946,13 @@
                     }
                     // 'success' yanitindan once oturumun stopped olayi geldiyse
                     // backend oturumu zaten kapandi — sahte 'dinleniyor'a donme.
+                    // Karsilastirma instance'a bagli: yeni backend ayni id'yi
+                    // yeniden kullanabilir.
                     if (data.session_id != null
-                            && typeof _lastEndedSessionId !== 'undefined'
-                            && data.session_id === _lastEndedSessionId) {
+                            && typeof _lastEndedSession !== 'undefined'
+                            && _lastEndedSession
+                            && _lastEndedSession.id === data.session_id
+                            && _lastEndedSession.instance === _backendInstanceId) {
                         endCaptureSession('Yakalama aniden sona erdi',
                             {text: 'Ses yakalama başlar başlamaz kapandı', type: 'error'});
                         return;

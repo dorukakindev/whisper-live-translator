@@ -219,6 +219,51 @@ app.whenReady().then(async () => {
     step('2b stopped-before-response -> no false listening', s.capturing === false
         && s.sessionId === null && s.stopDisabled, s);
 
+    // ── R1) backend restart: eski instance'in ended-id'si yeni backend'in
+    //         ayni session_id'sini yanlislikla oldurmemeli ──────────────────
+    s = await run(`(async()=>{
+        // fx-1'de oturum 1 ac + kapandi (ended kaydi olustu)
+        window.__statusPayload = {capturing:false, model_loaded:true,
+            instance_id:'fx-1', paused:false, session_id:null};
+        await resyncAfterReconnect();
+        window.__startQueue = [{success:true, session_id:1}];
+        await startCapture();
+        socket._events.capture_stopped({status:'stopped', session_id:1, reason:'stopped'});
+        // Backend restart: instance fx-2
+        window.__statusPayload = {capturing:false, model_loaded:true,
+            instance_id:'fx-2', paused:false, session_id:null};
+        await resyncAfterReconnect();
+        // Yeni backend session_id'yi 1'den baslatti
+        window.__startQueue = [{success:true, session_id:1}];
+        const alertsBefore = window.__alerts.length;
+        await startCapture();
+        const st = ${stateJs};
+        return {...st,
+            errAlerts: window.__alerts.slice(alertsBefore)
+                .filter(a=>a.t==='error').map(a=>a.m)};
+    })()`);
+    step('R1 restarted backend session reuse ok', s.capturing === true
+        && s.sessionId === 1 && s.errAlerts.length === 0, s);
+
+    // ── R2) pending start sirasinda eski oturumun gecikmis stopped'i ───────
+    s = await run(`(async()=>{
+        // Oturum 5 acti -> kullanici Durdur (backend'in stopped'i gecikecek)
+        window.__startQueue = [{success:true, session_id:5}];
+        await startCapture();
+        await stopCapture();
+        // Yeni start pending; eski oturumun stopped'i simdi gelir
+        window.__deferredStart = new Promise(r=>{window.__resolveStart=r;});
+        const pending = startCapture();
+        await new Promise(r=>setTimeout(r,0));
+        socket._events.capture_stopped({status:'stopped', session_id:5, reason:'stopped'});
+        window.__resolveStart({success:true, session_id:6});
+        window.__deferredStart = null;
+        await pending;
+        return ${stateJs};
+    })()`);
+    step('R2 stale stopped cannot cancel pending start', s.capturing === true
+        && s.sessionId === 6 && !s.stopDisabled, s);
+
     await win.webContents.executeJavaScript('void 0');
     if (failures.length) {
         console.error('BASARISIZ:', failures.join(' | '));
