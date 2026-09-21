@@ -2096,6 +2096,11 @@ class SpeakerDiarizer:
         # Otomatik tespit ile Flask'taki ad guncelleme endpoint'i farkli
         # thread'lerden ayni sozluk ve profil dosyasina dokunabilir.
         self._profile_lock = threading.RLock()
+        # save_profiles'in tamami (snapshot + tmp dosya + os.replace) bu kilidin
+        # altinda tek adim gibi siralanir: disk I/O'su _profile_lock disina
+        # tasiyinca iki eszamanli yazici siralanamaz hale gelir ve os.replace'i
+        # geciken eski snapshot daha yeni guncellemeyi ezer.
+        self._profile_write_lock = threading.Lock()
         self._profile_load_failed = False
         self._setup_lock = threading.RLock()
         # Reset sirasinda calismakta olan diarization sonucu eski profili yeniden
@@ -2201,10 +2206,18 @@ class SpeakerDiarizer:
         """Konuşmacı profillerini kaydet"""
         tmp_path = None
         try:
-            with self._profile_lock:
-                if self._profile_load_failed:
-                    logger.warning('Konusmaci profili kaydedilmedi: once okunamayan dosya kurtarilmali.')
-                    return
+            # Snapshot _profile_lock altinda kisa tutulur; tmp yazimi +
+            # os.replace (fsync/disk I/O) _profile_lock disinda yapilir ki
+            # yavas disk tespit/isim-guncelleme islerini bloklamasin.
+            # Yine de snapshot + yazim toplami _profile_write_lock ile
+            # siralanir: aksi halde geciken eski bir yazici daha yeni
+            # guncellemeyi ezer (kayip-guncelleme).
+            with self._profile_write_lock:
+                with self._profile_lock:
+                    if self._profile_load_failed:
+                        logger.warning('Konusmaci profili kaydedilmedi: once okunamayan dosya kurtarilmali.')
+                        return
+                    payload = json.dumps({'names': dict(self.speaker_names)}, ensure_ascii=False)
                 # Once ayni klasorde gecici dosyaya yaz, sonra atomik degistir.
                 # Uygulama yazim ortasinda kapanirsa yarim JSON birakilmaz.
                 profile_dir = os.path.dirname(os.path.abspath(self.profile_file))
@@ -2213,7 +2226,7 @@ class SpeakerDiarizer:
                     f".{os.path.basename(self.profile_file)}.{threading.get_ident()}.tmp"
                 )
                 with open(tmp_path, 'w', encoding='utf-8') as f:
-                    json.dump({'names': self.speaker_names}, f, ensure_ascii=False)
+                    f.write(payload)
                     f.flush()
                     os.fsync(f.fileno())
                 os.replace(tmp_path, self.profile_file)
@@ -2269,6 +2282,7 @@ class SpeakerDiarizer:
                 speaker_id = dominant_speaker.replace("SPEAKER_", "")
                 
                 # İsim ata veya mevcut ismi kullan
+                needs_save = False
                 with self._profile_lock:
                     if profile_generation != self._profile_generation:
                         logger.debug("Reset oncesinde baslayan konusmaci sonucu atlandi")
@@ -2279,9 +2293,13 @@ class SpeakerDiarizer:
                         self.speaker_names[speaker_id] = f"Konuşmacı {speaker_num}"
                         # Yalnizca YENI konusmaci eklendiginde diske yaz; her cumlede
                         # profil dosyasini yeniden yazmak gereksiz disk I/O'ydu.
-                        self.save_profiles()
-
-                    return speaker_id, self.speaker_names[speaker_id]
+                        # Yazim cagrisi kilit disinda yapilir (save_profiles I/O'su
+                        # diger profil islerini bloklamasin).
+                        needs_save = True
+                    speaker_name = self.speaker_names[speaker_id]
+                if needs_save:
+                    self.save_profiles()
+                return speaker_id, speaker_name
             
             return None, None
             
@@ -2293,17 +2311,19 @@ class SpeakerDiarizer:
     def update_speaker_name(self, speaker_id, new_name):
         """Konuşmacı adını güncelle"""
         with self._profile_lock:
-            if speaker_id in self.speaker_names:
-                self.speaker_names[speaker_id] = new_name
-                self.save_profiles()
+            if speaker_id not in self.speaker_names:
+                return
+            self.speaker_names[speaker_id] = new_name
+        # Dosya yazimi profil kilidinin disinda (save_profiles I/O'su kilit tutmasin).
+        self.save_profiles()
     
     def reset(self):
         """Tüm konuşmacı bilgilerini sıfırla"""
         with self._profile_lock:
             self._profile_generation += 1
             self.speaker_names = {}
-            # Konusmaci temizligi kimlik bilgisini silmemeli.
-            self.save_profiles()
+        # Konusmaci temizligi kimlik bilgisini silmemeli. Yazim kilit disinda.
+        self.save_profiles()
         logger.info("✅ Konuşmacı bilgileri sıfırlandı")
 
 class MicRecorder:
@@ -2436,6 +2456,14 @@ class MicRecorder:
                                 break
                 except Exception as e:
                     logger.error(f"Error reading mic stream: {e}")
+                    if self.is_recording:
+                        # Okuma kayit ortasinda koptu (cihaz dustu vb.): Alt hala
+                        # basiliyken ses sessizce kaybolmasin; kullaniciya bildir.
+                        try:
+                            socketio.emit('error', {
+                                'message': 'Mikrofon akışı okunamadı; kayıt durduruldu. Cihaz bağlantısını kontrol edin.'})
+                        except Exception:
+                            pass
                     break
         except Exception as e:
             self._start_error = str(e)
@@ -4330,16 +4358,16 @@ class WhisperWebTranscriber:
                     # WebSocket ile gönder
                     socketio.emit('new_transcription', transcription)
                     
-                    # Dosyaya kaydet (5MB'de otomatik yedekle + sifirla). Dil etiketi
-                    # UI ile ayni olsun diye script-duzeltmeli model_language kullanilir.
+                    # Dosya satiri kilit icinde hazirlanir (context uzunlugu o
+                    # ani yanstir); yazma isi kilit disinda yapilir (asagida).
                     context_info = f"[Context: {len(self.context_buffer)}/10]"
                     lang_info = f"[{transcription['model_language']}]"
                     # Mic dikte satirlari export'ta 'Ben' olarak isaretlenir
                     speaker_tag = speaker_name or ('Ben - Mikrofon' if self.capture_mode == 'mic' else None)
                     if speaker_tag:
-                        _append_transcript(f"[{transcription['timestamp']}] {context_info} {lang_info} [{speaker_tag}] {full_text}\n")
+                        transcript_line = f"[{transcription['timestamp']}] {context_info} {lang_info} [{speaker_tag}] {full_text}\n"
                     else:
-                        _append_transcript(f"[{transcription['timestamp']}] {context_info} {lang_info} {full_text}\n")
+                        transcript_line = f"[{transcription['timestamp']}] {context_info} {lang_info} {full_text}\n"
 
                     # Çeviri arka planda; tamamlaninca socket + dosya guncellenir.
                     # OpenAI saglayicisinda anahtar openai_responder'da tutulur, translator.api_key
@@ -4362,17 +4390,30 @@ class WhisperWebTranscriber:
                         # En son cevrilmek uzere gonderilen id (backlog atlama kontrolu icin)
                         self._latest_translate_submit_id = transcription['id']
                         self._latest_translate_sequence += 1
-                        self.translate_executor.submit(
-                            self._translate_async,
-                            transcription['id'],
-                            full_text,
-                            translation_request,
-                            session_id,
-                            result_generation,
-                            self._latest_translate_sequence,
-                        )
+                        try:
+                            self.translate_executor.submit(
+                                self._translate_async,
+                                transcription['id'],
+                                full_text,
+                                translation_request,
+                                session_id,
+                                result_generation,
+                                self._latest_translate_sequence,
+                            )
+                        except Exception as submit_exc:
+                            # Executor kapanmissa/reddettiyse kayit sonsuza dek
+                            # 'pending' kalmasin; terminal 'failed' iletilir.
+                            logger.warning(f"Ceviri kuyruga alinamadi: {submit_exc}")
+                            transcription['translation_status'] = 'failed'
+                            socketio.emit('transcription_translation_status', {
+                                'id': transcription['id'], 'status': 'failed',
+                                'revision': transcription.get('revision', 0)})
                     self._lifecycle_lock.release()
                     commit_lock_held = False
+
+                    # Dosyaya kayit yasam-dongusu kilidinin DISINDA: yavas/kitlenen
+                    # disk yazimi (fsync + rotasyon) stop/reset/snapshot'i bloklamasin.
+                    _append_transcript(transcript_line)
 
                     # Pyannote final metni artik bekletmez ve kuyruk biriktirmez.
                     # Bir tanima calisiyorsa bu kaydin etiketi atlanir; metin/ceviri
@@ -4394,9 +4435,12 @@ class WhisperWebTranscriber:
                                         future, tid, sid, generation
                                     )
                                 )
-                            except Exception:
+                            except Exception as submit_exc:
                                 self._diarize_slot.release()
-                                raise
+                                # Konusmaci etiketi en-iyi-gayret isidir; transkript
+                                # coktan commit edildi, kullaniciya hata basilmaz.
+                                logger.warning(
+                                    f"Konusmaci tanima kuyruga alinamadi: {submit_exc}")
                         else:
                             self._diarize_busy_skips += 1
 
@@ -4632,9 +4676,11 @@ class WhisperWebTranscriber:
                 'target_lang': request_snapshot['target_lang'],
                 'latency_ms': round(translation_elapsed_ms, 1),
             })
-            _append_transcript(f"    Çeviri [#{transcription_id}]: {translation}\n")
             self._lifecycle_lock.release()
             translation_lock_held = False
+            # Dosya yazimini kilit disinda tut: yavas disk canli oturum
+            # gecislerini (stop/reset/baslat) bloklamasin.
+            _append_transcript(f"    Çeviri [#{transcription_id}]: {translation}\n")
         except Exception as e:
             if translation_lock_held:
                 self._lifecycle_lock.release()
@@ -4749,7 +4795,8 @@ def hf_token():
         diarizer.is_ready = False
         diarizer.pipeline = None
         diarizer.hf_token = None
-        diarizer.save_profiles()
+    # Dosya yazimi kilitlerin disinda: profil kilidi boyunca disk I/O tutulmasin.
+    diarizer.save_profiles()
     return jsonify({'success': True, 'cleared': True})
 
 @app.route('/api/speaker_settings', methods=['POST'])
@@ -4957,6 +5004,15 @@ def push_to_talk():
         client = str(client)[:64] if isinstance(client, str) else None
         sequence = data.get('sequence')
         if type(sequence) is int:
+            # Kaynak basina defter sinirli tutulur: keyfi 'source' dizgileri
+            # kayit haritalarini sisemez (gercek kaynaklar renderer/global'dir).
+            if source not in transcriber._ptt_sequences:
+                while len(transcriber._ptt_sequences) >= 16:
+                    transcriber._ptt_sequences.pop(
+                        next(iter(transcriber._ptt_sequences)))
+                while len(transcriber._ptt_retired_clients) >= 16:
+                    transcriber._ptt_retired_clients.pop(
+                        next(iter(transcriber._ptt_retired_clients)))
             previous_client, previous = transcriber._ptt_sequences.get(source, (None, -1))
             same_client = previous_client == client
             retired = transcriber._ptt_retired_clients.setdefault(source, deque(maxlen=64))
@@ -4965,14 +5021,27 @@ def push_to_talk():
                                              or (previous_client is not None and not active)))):
                 return jsonify({'success': True, 'ptt': transcriber.ptt_active,
                                 'stale': True})
+            if active and not transcriber.is_running:
+                return jsonify({'success': False, 'error': 'Önce ses yakalamayı başlatın'}), 409
             # Yeni istemci PTT'yi yalnızca baslatma komutuyla devralabilir. Bir
             # kez emekliye ayrilan sayfanin gec active:true istegi de yeni
-            # sayfadan sahipligi geri alamaz.
+            # sayfadan sahipligi geri alamaz. Sahiplik kaydi yalniz UYGULANAN
+            # komutta guncellenir: 409 ile reddedilen start sahibi degistirip
+            # eski sayfayi kalici kitlemiyordu (stop'lari stale'e dusuyordu).
             if not same_client and previous_client is not None:
                 retired.append(previous_client)
             transcriber._ptt_sequences[source] = (client, sequence)
-        if active and not transcriber.is_running:
-            return jsonify({'success': False, 'error': 'Önce ses yakalamayı başlatın'}), 409
+        elif active:
+            # Sirasiz (sequence'siz/bozuk tipli) baslatma sahiplik alamaz;
+            # aksi halde denetimi tamamen atlayarak herhangi bir istemci PTT'yi
+            # acabilirdi. Yakalama durmussa normal start gibi 409'a duser;
+            # calisiyorsa sirasizlik yuzunden stale sayilir ve uygulanmaz.
+            if not transcriber.is_running:
+                return jsonify({'success': False, 'error': 'Önce ses yakalamayı başlatın'}), 409
+            return jsonify({'success': True, 'ptt': transcriber.ptt_active,
+                            'stale': True})
+        # Sirasiz STOP her zaman uygulanir: telafi durdurmalari (keepalive/
+        # timeout) hicbir zaman dusurulmez.
         transcriber.ptt_active = active
         return jsonify({'success': True, 'ptt': transcriber.ptt_active})
 
@@ -5006,7 +5075,10 @@ def _ptt_mic_command(data):
             if transcriber._audio_test_active:
                 return jsonify({'success': False, 'error': 'Ses testi sürüyor.'}), 409
         if recording_id and recording_id in mic_recorder._cancelled_recordings:
-            return jsonify({'success': True, 'discarded': True})
+            # Iptal edilmis id ile start: success+discarded donmek istemciyi
+            # 'dinleniyor' gosteriminde birakiyordu (false-success); acik hata don.
+            return jsonify({'success': False, 'discarded': True,
+                            'error': 'Bu kayıt kimliği iptal edildi.'}), 409
         if target_lang == 'auto':
             recent = transcriber.get_transcriptions_snapshot()
             target_lang = next((str(item.get('model_language', '')).lower()
@@ -5055,6 +5127,10 @@ def _ptt_mic_command(data):
                 owns_slot = _mic_job_slots.acquire(blocking=False)
                 if not owns_slot:
                     return jsonify({'success': False, 'error': 'Önceki mikrofon kayıtları hâlâ işleniyor.'}), 429
+            # Sonuc nesli, kaydin bitis emri islenirken orneklenir: stop()'un
+            # ~1.5sn join'i sirasinda gelen Stop/Reset sonucu bayat isaretler.
+            with transcriber._lifecycle_lock:
+                result_generation = transcriber._result_generation
             audio_data = mic_recorder.stop()
             if data.get('discard'):
                 return jsonify({'success': True, 'discarded': True})
@@ -5062,7 +5138,6 @@ def _ptt_mic_command(data):
             if audio_data is None:
                 return jsonify({'success': False, 'error': 'No audio recorded'})
 
-            result_generation = transcriber._result_generation
             translation_request = transcriber.translator.snapshot_request(
                 source_lang='TR', target_lang=str(target_lang).upper()
             )
@@ -5102,7 +5177,14 @@ def _schedule_mic_slot_guard(recording_id):
 def process_mic_audio(
         audio_data, target_lang, result_generation=None,
         translation_request=None, recording_id=None):
+    # Bir kayit icin en fazla bir terminal event yayinlanir: basari emit'i
+    # (ornegin soket koptu diye) patlasa bile kayit transcriptions'a girdiyse
+    # except kolu ikinci/yaniltici bir hata sonucu basmamalidir.
+    terminal_sent = False
+
     def emit_stale_result():
+        nonlocal terminal_sent
+        terminal_sent = True
         socketio.emit('ptt_mic_result', {
             'recording_id': recording_id, 'success': False,
             'error': 'Oturum sıfırlandı; kayıt işlenemedi.'
@@ -5115,6 +5197,7 @@ def process_mic_audio(
             return
         if not transcriber.current_model:
             logger.error("No model loaded for mic transcription")
+            terminal_sent = True
             socketio.emit('ptt_mic_result', {'recording_id': recording_id, 'success': False, 'error': 'Model yüklü değil'})
             return
 
@@ -5139,6 +5222,7 @@ def process_mic_audio(
 
         if not full_text or transcriber._is_likely_hallucination(full_text):
             logger.warning("Mic audio transcribed as empty or hallucination")
+            terminal_sent = True
             socketio.emit('ptt_mic_result', {'recording_id': recording_id, 'success': False, 'error': 'Ses anlaşılamadı'})
             return
 
@@ -5272,10 +5356,14 @@ def process_mic_audio(
             transcriber.transcriptions.append(dict(result))
             transcriber.stats['total_transcriptions'] += 1
             transcriber.stats['last_transcription'] = datetime.now().isoformat()
+            # Kayit kalici depoya girdi: artik tek terminal budur. Emit patlarsa
+            # except kolu ikinci bir (yaniltici, hata seklinde) sonuc basmaz.
+            terminal_sent = True
             socketio.emit('ptt_mic_result', result)
 
-            # Append to transcriptions.txt
-            _append_transcript(f"[{result['timestamp']}] [Ben - PTT] {full_text} -> {translation} (Okunuş: {romanized})\n")
+            transcript_line = (
+                f"[{result['timestamp']}] [Ben - PTT] {full_text} -> {translation} "
+                f"(Okunuş: {romanized})\n")
 
             # AI cevap-baglami hafizasina 'me' turu olarak ekle: Alt-PTT ile
             # karsi tarafa GERCEKTEN soylenen (translation) budur; full_text
@@ -5285,14 +5373,19 @@ def process_mic_audio(
                     'role': 'me', 'text': translation, 'turkish': full_text,
                 })
 
+        # Dosya yazimi yasam-dongusu kilidinin disinda: yavas disk yazimi
+        # stop/reset/baslat gecislerini bloklamasin.
+        _append_transcript(transcript_line)
+
     except Exception as e:
         _record_health_error('mic_transcription_failed')
         logger.error(f"Error processing mic audio: {e}", exc_info=True)
-        socketio.emit('ptt_mic_result', {
-            'recording_id': recording_id,
-            'success': False,
-            'error': 'Mikrofon sesi işlenirken beklenmeyen bir hata oluştu.'
-        })
+        if not terminal_sent:
+            socketio.emit('ptt_mic_result', {
+                'recording_id': recording_id,
+                'success': False,
+                'error': 'Mikrofon sesi işlenirken beklenmeyen bir hata oluştu.'
+            })
 
 @app.route('/api/whisper_language', methods=['POST'])
 def set_whisper_language():

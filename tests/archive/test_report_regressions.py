@@ -92,6 +92,7 @@ class ReportRegressions(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             diarizer = b.SpeakerDiarizer.__new__(b.SpeakerDiarizer)
             diarizer._profile_lock = threading.RLock()
+            diarizer._profile_write_lock = threading.Lock()
             diarizer._profile_load_failed = False
             diarizer._setup_lock = threading.Lock()
             diarizer._profile_generation = 0

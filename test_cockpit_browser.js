@@ -21,7 +21,7 @@ function fixtureHtml() {
     html = html.replace('<link rel="stylesheet" href="/static/whisper-pro-theme.css">',
         `<style>${fs.readFileSync(path.join(__dirname, 'static', 'whisper-pro-theme.css'), 'utf8')}</style>`);
     html = html.replace('{{ app_token|tojson }}', '"fixture-token"');
-    html = html.replace('socket = io();', `socket = {connected:true, _events:{}, on(n,f){this._events[n]=f;}};`);
+    html = html.replace(/socket = io\([^)]*\);/, `socket = {connected:true, _events:{}, on(n,f){this._events[n]=f;}, emit(){}};`);
     html = html.replace('window.onload = async function () {', 'window.onload = async function () { return;');
     html = html.replace('</body>', `<script>
         window.fetch = async url => ({ok:true, json:async()=> url.includes('stats')

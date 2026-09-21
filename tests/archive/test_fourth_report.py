@@ -16,6 +16,7 @@ class ProfileProtectionTests(unittest.TestCase):
         obj = b.SpeakerDiarizer.__new__(b.SpeakerDiarizer)
         obj.profile_file = str(path)
         obj._profile_lock = threading.RLock()
+        obj._profile_write_lock = threading.Lock()
         obj._profile_load_failed = False
         obj.speaker_names = {}
         obj.hf_token = None

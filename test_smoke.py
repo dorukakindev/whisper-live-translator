@@ -470,6 +470,7 @@ def test_serialized_file_writes():
         diarizer.speaker_names = {'0': 'Konuşmacı 1'}
         diarizer.profile_file = os.path.join(tmp_dir, 'speaker_profiles.json')
         diarizer._profile_lock = threading.RLock()
+        diarizer._profile_write_lock = threading.Lock()
         diarizer._profile_load_failed = False
         diarizer.hf_token = None
 
@@ -1606,6 +1607,7 @@ def test_speaker_reset_invalidates_inflight_result():
         diarizer.speaker_names = {}
         diarizer.profile_file = os.path.join(tmp_dir, 'speaker_profiles.json')
         diarizer._profile_lock = threading.RLock()
+        diarizer._profile_write_lock = threading.Lock()
         diarizer._profile_load_failed = False
         diarizer._profile_generation = 0
         diarizer.hf_token = None
@@ -1888,19 +1890,24 @@ def main():
     # Eski rapor turlarindaki ayrik unittest dosyalari geriye donuk kanit olarak
     # archive'de kalir; kalici tek giris noktasi yine bu smoke komutudur.
     archive_dir = os.path.join(os.path.dirname(__file__), 'tests', 'archive')
-    archived_suites = (
-        'test_complete_audit.py',
-        'test_followup_regressions.py',
-        'test_fourth_report.py',
-        'test_new_report.py',
-        'test_report_regressions.py',
-        'test_third_report.py',
+    archived_suites = tuple(
+        os.path.join(archive_dir, name) for name in (
+            'test_complete_audit.py',
+            'test_followup_regressions.py',
+            'test_fourth_report.py',
+            'test_new_report.py',
+            'test_report_regressions.py',
+            'test_third_report.py',
+        )
+    ) + (
+        # Es-zamanlilik/lifecycle audit paketi tests/ altinda kalici durur.
+        os.path.join(os.path.dirname(__file__), 'tests', 'test_concurrency_audit.py'),
     )
     child_env = os.environ.copy()
     child_env['PYTHONPATH'] = os.path.dirname(__file__) + os.pathsep + child_env.get('PYTHONPATH', '')
-    for suite in archived_suites:
-        path = os.path.join(archive_dir, suite)
-        print(f"-> archive/{suite}")
+    for path in archived_suites:
+        suite = os.path.relpath(path, os.path.dirname(__file__))
+        print(f"-> {suite}")
         result = subprocess.run([sys.executable, path], cwd=os.path.dirname(__file__),
                                 env=child_env, check=False)
         if result.returncode:
