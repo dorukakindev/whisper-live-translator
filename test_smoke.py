@@ -470,6 +470,7 @@ def test_serialized_file_writes():
         diarizer.speaker_names = {'0': 'Konuşmacı 1'}
         diarizer.profile_file = os.path.join(tmp_dir, 'speaker_profiles.json')
         diarizer._profile_lock = threading.RLock()
+        diarizer._profile_write_lock = threading.Lock()
         diarizer._profile_load_failed = False
         diarizer.hf_token = None
 
@@ -1606,6 +1607,7 @@ def test_speaker_reset_invalidates_inflight_result():
         diarizer.speaker_names = {}
         diarizer.profile_file = os.path.join(tmp_dir, 'speaker_profiles.json')
         diarizer._profile_lock = threading.RLock()
+        diarizer._profile_write_lock = threading.Lock()
         diarizer._profile_load_failed = False
         diarizer._profile_generation = 0
         diarizer.hf_token = None

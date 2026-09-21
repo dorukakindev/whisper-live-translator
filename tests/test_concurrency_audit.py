@@ -5,6 +5,7 @@ gerektiren yollar (PyAudio akisi, mikrofon thread'i) uygulamanin kendi
 arayuzlerinde sahtelenir; kanit olarak rastgele sleep yerine threading.Event,
 kontrollu executor'lar ve kilit sondalari kullanilir.
 """
+import json
 import os
 import sys
 import tempfile
@@ -632,6 +633,52 @@ class FileIoOutsideLockTests(unittest.TestCase):
         self.assertFalse(
             lock_held, 'profil kilidi dosya yazimi boyunca tutuldu')
         self.assertFalse(worker.is_alive())
+
+    # E-6b: snapshot alindiktan sonra bloklanan eski yazici, daha yeni bir
+    # profil guncellemesinin ustune yazamaz — yazimlar serilestirilmeli.
+    def test_profile_save_delayed_writer_cannot_overwrite_newer(self):
+        d = self.t.diarizer
+        first_in_replace = threading.Event()
+        release_first = threading.Event()
+        calls = []
+        real_replace = os.replace
+
+        def gated_replace(src, dst):
+            calls.append(src)
+            if len(calls) == 1:
+                first_in_replace.set()
+                release_first.wait(10)
+            return real_replace(src, dst)
+
+        with d._profile_lock:
+            d.speaker_names = {'0': 'Eski'}
+
+        with patch('os.replace', side_effect=gated_replace):
+            w1 = threading.Thread(target=d.save_profiles, daemon=True)
+            w1.start()
+            self.assertTrue(
+                first_in_replace.wait(5),
+                'ilk yazici os.replace icinde bloklanmadi')
+            # Eski yazici blokluyken yeni ad ve ikinci kayit cagrisi.
+            with d._profile_lock:
+                d.speaker_names = {'0': 'Yeni'}
+            w2 = threading.Thread(target=d.save_profiles, daemon=True)
+            w2.start()
+            # Duzeltmesiz kodda w2 hemen tamamlanir (ilk replace'i gecer);
+            # duzeltilmis kodda w1 kilidi birakana dek bekler — join burada
+            # yalnizca w2'ye ulasmak icin, iddia son satirdaki dosya iceriginde.
+            w2.join(timeout=3)
+            release_first.set()
+            w1.join(timeout=10)
+            w2.join(timeout=10)
+        self.assertFalse(
+            w1.is_alive() or w2.is_alive(),
+            'save_profiles cagrilari kilitlerde takili kaldi')
+        with open(d.profile_file, 'r', encoding='utf-8') as f:
+            final = json.load(f)
+        self.assertEqual(
+            final.get('names', {}).get('0'), 'Yeni',
+            'geciken eski snapshot yeni profil guncellemesini ezdi')
 
 
 # ─────────────────────────────────────────────────────────────────────────────

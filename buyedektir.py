@@ -2096,6 +2096,11 @@ class SpeakerDiarizer:
         # Otomatik tespit ile Flask'taki ad guncelleme endpoint'i farkli
         # thread'lerden ayni sozluk ve profil dosyasina dokunabilir.
         self._profile_lock = threading.RLock()
+        # save_profiles'in tamami (snapshot + tmp dosya + os.replace) bu kilidin
+        # altinda tek adim gibi siralanir: disk I/O'su _profile_lock disina
+        # tasiyinca iki eszamanli yazici siralanamaz hale gelir ve os.replace'i
+        # geciken eski snapshot daha yeni guncellemeyi ezer.
+        self._profile_write_lock = threading.Lock()
         self._profile_load_failed = False
         self._setup_lock = threading.RLock()
         # Reset sirasinda calismakta olan diarization sonucu eski profili yeniden
@@ -2201,27 +2206,31 @@ class SpeakerDiarizer:
         """Konuşmacı profillerini kaydet"""
         tmp_path = None
         try:
-            # Snapshot kilidin icinde; tmp yazimi + os.replace (fsync/disk I/O)
-            # kilidin DISINDA: yavas disk yazimi tespit/isim-guncelleme islerini
-            # bloklamasin. Son yazan kazanir — atomik os.replace korur.
-            with self._profile_lock:
-                if self._profile_load_failed:
-                    logger.warning('Konusmaci profili kaydedilmedi: once okunamayan dosya kurtarilmali.')
-                    return
-                payload = json.dumps({'names': dict(self.speaker_names)}, ensure_ascii=False)
-            # Once ayni klasorde gecici dosyaya yaz, sonra atomik degistir.
-            # Uygulama yazim ortasinda kapanirsa yarim JSON birakilmaz.
-            profile_dir = os.path.dirname(os.path.abspath(self.profile_file))
-            tmp_path = os.path.join(
-                profile_dir,
-                f".{os.path.basename(self.profile_file)}.{threading.get_ident()}.tmp"
-            )
-            with open(tmp_path, 'w', encoding='utf-8') as f:
-                f.write(payload)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp_path, self.profile_file)
-            tmp_path = None
+            # Snapshot _profile_lock altinda kisa tutulur; tmp yazimi +
+            # os.replace (fsync/disk I/O) _profile_lock disinda yapilir ki
+            # yavas disk tespit/isim-guncelleme islerini bloklamasin.
+            # Yine de snapshot + yazim toplami _profile_write_lock ile
+            # siralanir: aksi halde geciken eski bir yazici daha yeni
+            # guncellemeyi ezer (kayip-guncelleme).
+            with self._profile_write_lock:
+                with self._profile_lock:
+                    if self._profile_load_failed:
+                        logger.warning('Konusmaci profili kaydedilmedi: once okunamayan dosya kurtarilmali.')
+                        return
+                    payload = json.dumps({'names': dict(self.speaker_names)}, ensure_ascii=False)
+                # Once ayni klasorde gecici dosyaya yaz, sonra atomik degistir.
+                # Uygulama yazim ortasinda kapanirsa yarim JSON birakilmaz.
+                profile_dir = os.path.dirname(os.path.abspath(self.profile_file))
+                tmp_path = os.path.join(
+                    profile_dir,
+                    f".{os.path.basename(self.profile_file)}.{threading.get_ident()}.tmp"
+                )
+                with open(tmp_path, 'w', encoding='utf-8') as f:
+                    f.write(payload)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, self.profile_file)
+                tmp_path = None
         except Exception as e:
             logger.warning(f"Konusmaci profili kaydedilemedi: {e}")
         finally:
