@@ -105,7 +105,7 @@ async function translateOwnReply() {
         const message = error.name === 'AbortError' ? 'Çeviri zaman aşımına uğradı. Tekrar dene.' : error.message;
         setCockpitValue('ownReplyStatus', message);
         if (generation === _replyGeneration) {
-            setCockpitValue('replyCockpitProgress', 'Çeviri alınamadı');
+            setCockpitValue('replyCockpitProgress', 'Çeviri alınamadı', 'error');
             setCockpitValue('replyCockpitOptions', 'Metnin korundu. Çevir düğmesiyle tekrar deneyebilirsin.');
         }
     } finally {
@@ -300,7 +300,7 @@ function failReplyCockpit(id, message) {
     const host = document.getElementById('replyCockpitOptions');
     const hasOptions = !!(host && host.querySelector('.reply-option-card'));
     setCockpitValue('replyCockpitProgress',
-        hasOptions ? 'Kalan seçenekler alınamadı' : (message || 'Cevap alınamadı'));
+        hasOptions ? 'Kalan seçenekler alınamadı' : (message || 'Cevap alınamadı'), 'error');
     if (host && !hasOptions) {
         host.innerHTML = `<div class="reply-cockpit-empty">${escapeHtml(
             message || 'Cevap alınamadı. Cevap öner düğmesiyle tekrar deneyin.')}</div>`;

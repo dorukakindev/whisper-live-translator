@@ -1935,6 +1935,7 @@ button:not(:disabled), summary { cursor: pointer; }
 .reply-cockpit-header p { margin-top: 9px; max-width: 60ch; font-size: 12px; line-height: 1.55; }
 .reply-cockpit-progress { color: var(--wp-text-muted); font-size: 10px; padding: 4px 0; }
 .reply-cockpit-progress:empty { display: none; }
+.reply-cockpit-progress[data-state="error"] { color: var(--wp-danger); }
 .reply-cockpit-options { display: flex; flex-direction: column; gap: 18px; padding: 18px 22px; }
 .reply-choice-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; flex-shrink: 0; }
 .reply-choice { display: flex; align-items: center; gap: 9px; padding: 10px 12px; min-height: 54px; background: transparent; color: var(--wp-text-secondary); border: 1px solid var(--wp-border); border-radius: 8px; font-size: 12px; line-height: 1.4; text-align: left; }

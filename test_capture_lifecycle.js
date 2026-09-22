@@ -554,12 +554,14 @@ app.whenReady().then(async () => {
             dockStuck: opts.textContent.includes('hazırlanıyor')
                 && !opts.querySelector('.reply-option-card'),
             progressText: progress.textContent,
+            progressState: progress.dataset.state,
             btnDisabled: btn.disabled,
             btnHidden: btn.style.display === 'none'};
     })()`);
     step('P9a failed answer request clears reply dock', s.missing === false
         && s.dockStuck === false && s.progressText !== ''
         && !s.progressText.includes('Hazırlanıyor')
+        && s.progressState === 'error'
         && s.btnDisabled === false && s.btnHidden === false, s);
 
     // ── P9b) basarili istek dock'a gercek secenekleri cizer ────────────
@@ -581,10 +583,12 @@ app.whenReady().then(async () => {
         return {missing: false,
             cardCount: opts.querySelectorAll('.reply-option-card').length,
             progressText: document.getElementById('replyCockpitProgress').textContent,
+            progressState: document.getElementById('replyCockpitProgress').dataset.state,
             btnHidden: btn.style.display === 'none'};
     })()`);
     step('P9b successful answer renders dock options', s.missing === false
         && s.cardCount === 1 && s.progressText.includes('seçenek')
+        && s.progressState !== 'error'
         && s.btnHidden === true, s);
 
     await win.webContents.executeJavaScript('void 0');
