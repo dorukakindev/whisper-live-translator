@@ -1,10 +1,20 @@
-# Whisper Pro
+<div align="center">
+
+![Whisper Pro](docs/media/whisper-pro-banner.png)
+
+**Hear it. Read it. Answer in any language.**
 
 [![Windows](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows)](docs/INSTALLATION.md)
 [![MIT License](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)
 [![Public checks](https://github.com/dorukakindev/whisper-live-translator/actions/workflows/public-checks.yml/badge.svg)](https://github.com/dorukakindev/whisper-live-translator/actions/workflows/public-checks.yml)
 
-Whisper Pro is a Windows desktop assistant for live conversations across languages. It captures microphone or Windows system audio, transcribes speech locally with faster-whisper, optionally translates incoming speech, and generates reply suggestions with Turkish-friendly pronunciation guides.
+[Installation](docs/INSTALLATION.md) · [Usage](docs/USAGE.md) · [Architecture](docs/ARCHITECTURE.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Privacy](docs/PRIVACY.md)
+
+</div>
+
+---
+
+Whisper Pro is a Windows desktop assistant for live conversations across languages. It captures microphone or Windows system audio, transcribes speech locally with faster-whisper, optionally translates incoming speech, and generates reply suggestions with Turkish-friendly pronunciation guides you can read aloud.
 
 ![Whisper Pro live conversation and reply suggestions](docs/media/whisper-pro-conversation.png)
 
@@ -21,12 +31,12 @@ The live workspace keeps the full conversation readable while reply suggestions 
 
 ## Highlights
 
-- Live microphone and Windows system-audio transcription
-- Optional incoming-speech translation
-- AI replies with native text, Turkish meaning, and Turkish-readable pronunciation
-- Live partial transcription, push-to-talk tools, quick phrases, search, and export
-- Optional speaker diarization and a compact game overlay
-- Local-only backend by default (`127.0.0.1`)
+- 🎙️ Live microphone and Windows system-audio transcription
+- 🌐 Optional incoming-speech translation
+- 💬 AI replies with native text, Turkish meaning, and Turkish-readable pronunciation
+- ⚡ Live partial transcription, push-to-talk tools, quick phrases, search, and export
+- 👥 Optional speaker diarization and a compact game overlay
+- 🔒 Local-only backend by default (`127.0.0.1`)
 
 ## What you can do
 
@@ -103,8 +113,6 @@ Copy-Item .env.example .env
 notepad .env
 npm start
 ```
-
-See [Installation](docs/INSTALLATION.md), [Usage](docs/USAGE.md), [Architecture](docs/ARCHITECTURE.md), [Troubleshooting](docs/TROUBLESHOOTING.md), and the [public release checklist](PUBLIC_RELEASE_CHECKLIST.md).
 
 ## Configuration
 
