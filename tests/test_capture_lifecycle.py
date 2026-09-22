@@ -542,6 +542,45 @@ class CaptureLifecycleBackendTests(unittest.TestCase):
         finally:
             t.audio_queue = old_q
 
+    # ── P8a) Socket.IO baglantisi token olmadan / yanlis tokenla reddedilir ──
+    def test_socket_rejects_bad_or_missing_token(self):
+        bad = b.socketio.test_client(b.app, auth={'token': 'yanlis-token'})
+        self.assertFalse(bad.is_connected(), 'yanlis token ile baglanti acildi')
+        none = b.socketio.test_client(b.app, auth={})
+        self.assertFalse(none.is_connected(), 'token olmadan baglanti acildi')
+        good = b.socketio.test_client(b.app, auth={'token': b.APP_TOKEN})
+        self.assertTrue(good.is_connected(), 'dogru tokenla baglanti reddedildi')
+        good.disconnect()
+
+    # ── P8b) /api/* butun metodlarda token ister; dict-olmayan JSON 400 ──
+    def test_api_token_and_body_contract(self):
+        bare = b.app.test_client()   # token enjekte edilmeyen istemci
+        for path in ['/api/status', '/api/transcriptions', '/api/settings',
+                     '/api/stats']:
+            r = bare.get(path)
+            self.assertEqual(r.status_code, 403,
+                             f'tokensuz GET {path} reddedilmedi: {r.status_code}')
+        for path, payload in [('/api/stop', {}), ('/api/ptt', {}),
+                              ('/api/clear', {}), ('/api/pause', {})]:
+            r = bare.post(path, json=payload)
+            self.assertEqual(r.status_code, 403,
+                             f'tokensuz POST {path} reddedilmedi: {r.status_code}')
+        r = bare.post('/api/stop', data='"metin"',
+                      content_type='application/json',
+                      headers={'X-Whisper-Token': b.APP_TOKEN})
+        self.assertEqual(r.status_code, 400,
+                         f'dict-olmayan JSON 400 vermedi: {r.status_code}')
+
+    # ── P8c) healthz gizli alan tasimaz ──────────────────────────────────
+    def test_healthz_leaks_no_sensitive_fields(self):
+        c = b.app.test_client()
+        r = c.get('/healthz')
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        for forbidden in ('token', 'api_key', 'secret', 'password', '.env'):
+            self.assertNotIn(forbidden, body.lower(),
+                             f'healthz gizli alan sizdiriyor: {forbidden}')
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

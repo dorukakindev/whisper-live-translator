@@ -48,6 +48,10 @@ function fixtureHtml() {
                     latency:{}, performance:{audio_queue_size:0},
                     pipeline:{asr_active:false}})};
             }
+            if (url === '/api/generate_ai_response') {
+                return {ok:true, json:async()=> window.__aiDeferred
+                    ? await window.__aiDeferred : {success:true, options:[]}};
+            }
             return {ok:true, json:async()=> ({success:true})};
         };
         const devSel = document.getElementById('deviceSelect');
@@ -290,6 +294,117 @@ app.whenReady().then(async () => {
             has9002: !!document.querySelector('[data-transcription-id="902"]')};
     })()`);
     step('P1b own ptt_mic_result renders', s.items === 1 && s.has9002, s);
+
+    // ── P4) satir silindikten sonra gec gelen AI/ceviri yaniti satiri
+    //         geri getirmemeli (renderAiResult eksik-elemanda erken doner) ──
+    s = await run(`(async()=>{
+        socket._events.new_transcription({id:903, text:'satir dokuz yuz uc',
+            model_language:'EN', timestamp:'12:00:03', instance_id:'fx-1'});
+        const row = document.querySelector('[data-transcription-id="903"]');
+        const btn = row ? row.querySelector('.ai-translate-btn') : null;
+        if (!row || !btn) return {missing:true};
+        transcriptionTexts['903'] = 'satir dokuz yuz uc';
+        window.__aiDeferred = new Promise(r=>{window.__resolveAi = r;});
+        getAIResponseById(903, 'translate', btn);
+        await new Promise(r=>setTimeout(r,0));
+        // Satir fetch havada iken siliniyor (kullanici Temizle/budama)
+        row.remove();
+        window.__resolveAi({success:true, translation:'cevirilmis',
+            detected_lang:'en', options:[]});
+        await new Promise(r=>setTimeout(r,10));
+        return {resurrected: !!document.querySelector('[data-transcription-id="903"]'),
+            suggestionBox: !!document.getElementById('ai-result-903')};
+    })()`);
+    step('P4 late AI result cannot resurrect removed row',
+        !s.missing && !s.resurrected && !s.suggestionBox, s);
+
+    // ── P6a) uzun gorusme: 130 transkriptte DOM 100'e budanir, metin haritasi
+    //         kilit-adimda temizlenir, budanmis id tekrar eklenemez ──────────
+    s = await run(`(()=>{
+        for (let i = 1000; i < 1130; i++) {
+            socket._events.new_transcription({id:i, text:'uzun gorusme satiri ' + i,
+                model_language:'EN', timestamp:'12:01:00', instance_id:'fx-1'});
+        }
+        const items = document.querySelectorAll('.transcription-item').length;
+        const texts = Object.keys(transcriptionTexts).map(Number);
+        const keptRange = texts.filter(x => x >= 1000);
+        const minKept = Math.min(...keptRange);
+        // budanmis eski id yeniden gelirse reddedilmeli
+        const before = document.querySelectorAll('.transcription-item').length;
+        socket._events.new_transcription({id:1005, text:'budanmis geri geldi',
+            model_language:'EN', timestamp:'12:01:01', instance_id:'fx-1'});
+        return {items, keptCount: keptRange.length, minKept,
+            hasOldTexts: texts.some(x => x < 1000),
+            rejected: document.querySelectorAll('.transcription-item').length === before};
+    })()`);
+    // (902/903 metinleri bilincli secimler oldugu icin haritada kalabilir;
+    //  yeni akisin 1000-1129 araligi tam 100 elemanla, en eski 1030'dan baslamali)
+    step('P6a 130 transcripts -> DOM pruned + map synced', s.items === 100
+        && s.keptCount === 100 && s.minKept === 1030 && s.rejected, s);
+
+    // ── P6b) dil + tema degisimi hata uretmeden calisir ─────────────────
+    s = await run(`(()=>{
+        const errs = [];
+        try {
+            window.whisperI18n.setLanguage('tr');
+            const trLabel = document.documentElement.dataset.uiLang;
+            window.whisperI18n.setLanguage('en');
+            const enLabel = document.documentElement.dataset.uiLang;
+            return {trLabel, enLabel};
+        } catch (e) { return {err: String(e)}; }
+    })()`);
+    step('P6b ui language switch', s.trLabel === 'tr' && s.enLabel === 'en', s);
+
+    s = await run(`(()=>{
+        try {
+            const before = document.body.classList.contains('light-mode');
+            toggleTheme();
+            const mid = document.body.classList.contains('light-mode');
+            const stored = whisperStorage.getItem('theme');
+            toggleTheme();
+            return {before, mid, stored, restored:
+                document.body.classList.contains('light-mode')};
+        } catch (e) { return {err: String(e)}; }
+    })()`);
+    step('P6c theme toggle roundtrip', s.before === false && s.mid === true
+        && s.stored === 'light' && s.restored === false, s);
+
+    // ── P6d) arama/filtre: gecmis sorgusu sonuc kartini render eder ─────
+    s = await run(`(async()=>{
+        const keep = window.fetch;
+        window.fetch = async (url, opts) => {
+            if (String(url).startsWith('/api/transcriptions')) {
+                return {ok:true, json:async()=>({transcriptions:[
+                    {id:1129, text:'uzun gorusme satiri 1129',
+                     date:'2026-09-22', timestamp:'12:01'}]})};
+            }
+            return keep(url, opts);
+        };
+        await searchFullTranscriptHistory('1129');
+        const box = document.getElementById('transcriptSearchResults');
+        const shown = box.style.display !== 'none'
+            && box.textContent.includes('1129');
+        window.fetch = keep;
+        return {shown};
+    })()`);
+    step('P6d history search renders match card', s.shown === true, s);
+
+    // ── P8) XSS: zararli icerikli transkript/ceviri DOM'da sadece metin ──
+    s = await run(`(()=>{
+        window.__xssFired = false;
+        window.__xss = () => { window.__xssFired = true; };
+        socket._events.new_transcription({id:2000,
+            text:'<img src=x onerror=__xss()><b>koyu</b>',
+            translation:'<script>__xss()<\/script><i>it</i>',
+            model_language:'EN', timestamp:'12:05:00', instance_id:'fx-1'});
+        const item = document.querySelector('[data-transcription-id="2000"]');
+        return {fired: window.__xssFired,
+            img: !!document.querySelector('img[src=x]'),
+            script: !!item && !!item.querySelector('script'),
+            textKept: !!item && item.textContent.includes('koyu')};
+    })()`);
+    step('P8 xss payload stays inert', s.fired === false && s.img === false
+        && s.script === false && s.textKept === true, s);
 
     await win.webContents.executeJavaScript('void 0');
     if (failures.length) {
