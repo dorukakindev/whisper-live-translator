@@ -48,6 +48,10 @@ function fixtureHtml() {
                     latency:{}, performance:{audio_queue_size:0},
                     pipeline:{asr_active:false}})};
             }
+            if (url === '/api/generate_ai_response') {
+                return {ok:true, json:async()=> window.__aiDeferred
+                    ? await window.__aiDeferred : {success:true, options:[]}};
+            }
             return {ok:true, json:async()=> ({success:true})};
         };
         const devSel = document.getElementById('deviceSelect');
@@ -263,6 +267,268 @@ app.whenReady().then(async () => {
     })()`);
     step('R2 stale stopped cannot cancel pending start', s.capturing === true
         && s.sessionId === 6 && !s.stopDisabled, s);
+
+    // ── P1) ptt_mic_result broadcast: baska istemcinin kaydi bu sayfanin
+    //         listesine ve uyarilarina sizmamali (recording_id sahipligi) ──
+    s = await run(`(()=>{
+        const itemsBefore = document.querySelectorAll('.transcription-item').length;
+        const alertsBefore = window.__alerts.length;
+        socket._events.ptt_mic_result({recording_id:'baska-uuid-1', success:true,
+            id:901, original:'yabanci metin', translation:'foreign text',
+            target_lang:'EN', romanized:'foreyn tekst', timestamp:'12:00:01'});
+        socket._events.ptt_mic_result({recording_id:'baska-uuid-2', success:false,
+            error:'uzak istemci hatasi'});
+        return {items: document.querySelectorAll('.transcription-item').length - itemsBefore,
+            newAlerts: window.__alerts.length - alertsBefore};
+    })()`);
+    step('P1a foreign ptt_mic_result ignored', s.items === 0 && s.newAlerts === 0, s);
+
+    // Kendi kaydimizin sonucu ise islenmeli (sahiplik eslesmesi gecerli)
+    s = await run(`(()=>{
+        altPttRecordingId = 'benim-kayit-uuid';
+        trackOwnMicId(altPttRecordingId);  // startOwnReplyMic'in yaptigi izleme
+        const itemsBefore = document.querySelectorAll('.transcription-item').length;
+        socket._events.ptt_mic_result({recording_id:'benim-kayit-uuid', success:true,
+            id:902, original:'merhaba', translation:'hello',
+            target_lang:'EN', romanized:'he-lo', timestamp:'12:00:02'});
+        return {items: document.querySelectorAll('.transcription-item').length - itemsBefore,
+            has9002: !!document.querySelector('[data-transcription-id="902"]')};
+    })()`);
+    step('P1b own ptt_mic_result renders', s.items === 1 && s.has9002, s);
+
+    // ── P1c) ayni sayfanin iki kaydi: backend _mic_job_slots=2 oldugu icin
+    //         A islenirken B baslayabilir. A'nin gec gelen sonucu bu sayfaya
+    //         ait -> satir gorunmeli; yabanci istemci yine reddedilmeli.
+    //         Iptal edilen B'nin sonucu ise artik kabul edilmemeli. ─────────
+    s = await run(`(async()=>{
+        // A baslat -> birak (sunucuda islemeye girdi)
+        startOwnReplyMic();
+        const idA = altPttRecordingId;
+        await new Promise(r=>setTimeout(r,0));
+        finishAltPtt();  // discard=false: sonuc bekleniyor -> idA pending kalir
+        await new Promise(r=>setTimeout(r,0));
+        // A islenirken B basla -> aktif kayit B oldu
+        startOwnReplyMic();
+        const idB = altPttRecordingId;
+        await new Promise(r=>setTimeout(r,0));
+        const itemsBefore = document.querySelectorAll('.transcription-item').length;
+        const alertsBefore = window.__alerts.length;
+        // A'nin gec sonucu: bu sayfaya ait -> SATIR olusmali
+        socket._events.ptt_mic_result({recording_id:idA, success:true,
+            id:904, original:'a sesi', translation:'a sound',
+            target_lang:'EN', romanized:'ey-saund', timestamp:'12:00:04'});
+        // yabanci istemcinin sonucu yine reddedilmeli
+        socket._events.ptt_mic_result({recording_id:'yabanci-uuid', success:true,
+            id:905, original:'yabanci', translation:'foreign', target_lang:'EN'});
+        // B'yi iptal et (discard): terminal sonucu artik kabul edilmemeli
+        finishAltPtt(true);
+        await new Promise(r=>setTimeout(r,0));
+        socket._events.ptt_mic_result({recording_id:idB, success:true,
+            id:906, original:'b sesi', translation:'b sound', target_lang:'EN'});
+        const pending = (typeof ownMicPendingIds === 'undefined')
+            ? null : id => ownMicPendingIds.has(id);
+        return {idA, idB,
+            hasA: !!document.querySelector('[data-transcription-id="904"]'),
+            hasForeign: !!document.querySelector('[data-transcription-id="905"]'),
+            hasDiscardedB: !!document.querySelector('[data-transcription-id="906"]'),
+            pendingA: pending === null ? null : pending(idA),
+            pendingB: pending === null ? null : pending(idB),
+            pendingForeign: pending === null ? null : pending('yabanci-uuid'),
+            items: document.querySelectorAll('.transcription-item').length - itemsBefore,
+            newAlerts: window.__alerts.length - alertsBefore};
+    })()`);
+    step('P1c late own result renders; foreign + discarded still rejected',
+        s.hasA === true && s.hasForeign === false && s.hasDiscardedB === false
+        && s.items === 1 && s.pendingA === false && s.pendingB === false
+        && s.pendingForeign === false, s);
+
+    // ── P1d) hizli birakma + gec basarisiz start: /api/ptt_mic 409 doner.
+    //         Kullanici biraktigi icin altPttHeld=false -> catch'teki
+    //         finishAltPtt(true) erken cikar; basarisiz start'in id'si
+    //         yine de pending'den silinmeli (yoksa cap 4 gercek kayitlari evir). ──
+    s = await run(`(async()=>{
+        const origFetch = window.fetch;
+        window.fetch = (url, opts) => {
+            if (url === '/api/ptt_mic') {
+                const body = JSON.parse(opts.body);
+                if (body.active === true) {
+                    return Promise.resolve({ok:false, status:409,
+                        json:async()=>({success:false, error:'catisma'})});
+                }
+            }
+            return origFetch(url, opts);
+        };
+        startOwnReplyMic();
+        const idA = altPttRecordingId;
+        finishAltPtt();            // kullanici hemen birakti (discard=false)
+        await new Promise(r=>setTimeout(r,20));  // komut zinciri + 409 islesin
+        window.fetch = origFetch;
+        const pending = (typeof ownMicPendingIds === 'undefined') ? null
+            : id => ownMicPendingIds.has(id);
+        return {idA, held: altPttHeld,
+            pendingA: pending === null ? null : pending(idA)};
+    })()`);
+    step('P1d failed start after quick release untracks id',
+        s.held === false && s.pendingA === false, s);
+
+    // ── P1e) A islenirken B'nin start'i basarisiz: yalniz B'nin id'si silinir;
+    //         A pending'de kalir ve sonucu satir olarak gorunur. ─────────────
+    s = await run(`(async()=>{
+        const origFetch = window.fetch;
+        let startCalls = 0;
+        window.fetch = (url, opts) => {
+            if (url === '/api/ptt_mic') {
+                const body = JSON.parse(opts.body);
+                if (body.active === true) {
+                    startCalls++;
+                    if (startCalls >= 2) {  // B'nin start'i basarisiz
+                        return Promise.resolve({ok:false, status:409,
+                            json:async()=>({success:false, error:'slot dolu'})});
+                    }
+                }
+            }
+            return origFetch(url, opts);
+        };
+        // A: basarili start + birak -> sunucuda islemede (pending)
+        startOwnReplyMic();
+        const idA = altPttRecordingId;
+        await new Promise(r=>setTimeout(r,10));
+        finishAltPtt();
+        await new Promise(r=>setTimeout(r,10));
+        // B: start basarisiz
+        startOwnReplyMic();
+        const idB = altPttRecordingId;
+        await new Promise(r=>setTimeout(r,20));
+        window.fetch = origFetch;
+        const itemsBefore = document.querySelectorAll('.transcription-item').length;
+        socket._events.ptt_mic_result({recording_id:idA, success:true,
+            id:907, original:'a sonuc', translation:'a result', target_lang:'EN'});
+        // B'nin hic kabul edilmeyen kaydina sonuc gelirse reddedilmeli
+        socket._events.ptt_mic_result({recording_id:idB, success:true,
+            id:908, original:'b sonuc', translation:'b result', target_lang:'EN'});
+        const pending = (typeof ownMicPendingIds === 'undefined') ? null
+            : id => ownMicPendingIds.has(id);
+        return {idA, idB,
+            hasA: !!document.querySelector('[data-transcription-id="907"]'),
+            hasB: !!document.querySelector('[data-transcription-id="908"]'),
+            pendingA: pending === null ? null : pending(idA),
+            pendingB: pending === null ? null : pending(idB),
+            items: document.querySelectorAll('.transcription-item').length - itemsBefore};
+    })()`);
+    step('P1e failed B start cannot evict pending A; A still renders',
+        s.hasA === true && s.hasB === false && s.items === 1
+        && s.pendingA === false && s.pendingB === false, s);
+
+    // ── P4) satir silindikten sonra gec gelen AI/ceviri yaniti satiri
+    //         geri getirmemeli (renderAiResult eksik-elemanda erken doner) ──
+    s = await run(`(async()=>{
+        socket._events.new_transcription({id:903, text:'satir dokuz yuz uc',
+            model_language:'EN', timestamp:'12:00:03', instance_id:'fx-1'});
+        const row = document.querySelector('[data-transcription-id="903"]');
+        const btn = row ? row.querySelector('.ai-translate-btn') : null;
+        if (!row || !btn) return {missing:true};
+        transcriptionTexts['903'] = 'satir dokuz yuz uc';
+        window.__aiDeferred = new Promise(r=>{window.__resolveAi = r;});
+        getAIResponseById(903, 'translate', btn);
+        await new Promise(r=>setTimeout(r,0));
+        // Satir fetch havada iken siliniyor (kullanici Temizle/budama)
+        row.remove();
+        window.__resolveAi({success:true, translation:'cevirilmis',
+            detected_lang:'en', options:[]});
+        await new Promise(r=>setTimeout(r,10));
+        return {resurrected: !!document.querySelector('[data-transcription-id="903"]'),
+            suggestionBox: !!document.getElementById('ai-result-903')};
+    })()`);
+    step('P4 late AI result cannot resurrect removed row',
+        !s.missing && !s.resurrected && !s.suggestionBox, s);
+
+    // ── P6a) uzun gorusme: 130 transkriptte DOM 100'e budanir, metin haritasi
+    //         kilit-adimda temizlenir, budanmis id tekrar eklenemez ──────────
+    s = await run(`(()=>{
+        for (let i = 1000; i < 1130; i++) {
+            socket._events.new_transcription({id:i, text:'uzun gorusme satiri ' + i,
+                model_language:'EN', timestamp:'12:01:00', instance_id:'fx-1'});
+        }
+        const items = document.querySelectorAll('.transcription-item').length;
+        const texts = Object.keys(transcriptionTexts).map(Number);
+        const keptRange = texts.filter(x => x >= 1000);
+        const minKept = Math.min(...keptRange);
+        // budanmis eski id yeniden gelirse reddedilmeli
+        const before = document.querySelectorAll('.transcription-item').length;
+        socket._events.new_transcription({id:1005, text:'budanmis geri geldi',
+            model_language:'EN', timestamp:'12:01:01', instance_id:'fx-1'});
+        return {items, keptCount: keptRange.length, minKept,
+            hasOldTexts: texts.some(x => x < 1000),
+            rejected: document.querySelectorAll('.transcription-item').length === before};
+    })()`);
+    // (902/903 metinleri bilincli secimler oldugu icin haritada kalabilir;
+    //  yeni akisin 1000-1129 araligi tam 100 elemanla, en eski 1030'dan baslamali)
+    step('P6a 130 transcripts -> DOM pruned + map synced', s.items === 100
+        && s.keptCount === 100 && s.minKept === 1030 && s.rejected, s);
+
+    // ── P6b) dil + tema degisimi hata uretmeden calisir ─────────────────
+    s = await run(`(()=>{
+        const errs = [];
+        try {
+            window.whisperI18n.setLanguage('tr');
+            const trLabel = document.documentElement.dataset.uiLang;
+            window.whisperI18n.setLanguage('en');
+            const enLabel = document.documentElement.dataset.uiLang;
+            return {trLabel, enLabel};
+        } catch (e) { return {err: String(e)}; }
+    })()`);
+    step('P6b ui language switch', s.trLabel === 'tr' && s.enLabel === 'en', s);
+
+    s = await run(`(()=>{
+        try {
+            const before = document.body.classList.contains('light-mode');
+            toggleTheme();
+            const mid = document.body.classList.contains('light-mode');
+            const stored = whisperStorage.getItem('theme');
+            toggleTheme();
+            return {before, mid, stored, restored:
+                document.body.classList.contains('light-mode')};
+        } catch (e) { return {err: String(e)}; }
+    })()`);
+    step('P6c theme toggle roundtrip', s.before === false && s.mid === true
+        && s.stored === 'light' && s.restored === false, s);
+
+    // ── P6d) arama/filtre: gecmis sorgusu sonuc kartini render eder ─────
+    s = await run(`(async()=>{
+        const keep = window.fetch;
+        window.fetch = async (url, opts) => {
+            if (String(url).startsWith('/api/transcriptions')) {
+                return {ok:true, json:async()=>({transcriptions:[
+                    {id:1129, text:'uzun gorusme satiri 1129',
+                     date:'2026-09-22', timestamp:'12:01'}]})};
+            }
+            return keep(url, opts);
+        };
+        await searchFullTranscriptHistory('1129');
+        const box = document.getElementById('transcriptSearchResults');
+        const shown = box.style.display !== 'none'
+            && box.textContent.includes('1129');
+        window.fetch = keep;
+        return {shown};
+    })()`);
+    step('P6d history search renders match card', s.shown === true, s);
+
+    // ── P8) XSS: zararli icerikli transkript/ceviri DOM'da sadece metin ──
+    s = await run(`(()=>{
+        window.__xssFired = false;
+        window.__xss = () => { window.__xssFired = true; };
+        socket._events.new_transcription({id:2000,
+            text:'<img src=x onerror=__xss()><b>koyu</b>',
+            translation:'<script>__xss()<\/script><i>it</i>',
+            model_language:'EN', timestamp:'12:05:00', instance_id:'fx-1'});
+        const item = document.querySelector('[data-transcription-id="2000"]');
+        return {fired: window.__xssFired,
+            img: !!document.querySelector('img[src=x]'),
+            script: !!item && !!item.querySelector('script'),
+            textKept: !!item && item.textContent.includes('koyu')};
+    })()`);
+    step('P8 xss payload stays inert', s.fired === false && s.img === false
+        && s.script === false && s.textKept === true, s);
 
     await win.webContents.executeJavaScript('void 0');
     if (failures.length) {

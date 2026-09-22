@@ -3651,6 +3651,14 @@
 
             // PTT ve hydration ayni kimlik/budama sozlesmesini kullanir.
             socket.on('ptt_mic_result', data => {
+                // ptt_mic_result tum istemcilere yayilir: sonucu yalniz BU sayfanin
+                // baslattigi ve terminal sonuc bekleyen kayitlar (ownMicPendingIds)
+                // sahiplenir. Tek 'son kayit' kimligi yetmez: backend
+                // _mic_job_slots=2 oldugundan A islenirken B baslayabilir ve
+                // A'nin sonucu bu sayfaya ait kalmaya devam eder; B'nin iptal
+                // edilen kaydina gelen sonuc ise kabul edilmez.
+                if (!data || !data.recording_id || !ownMicPendingIds.has(data.recording_id)) return;
+                ownMicPendingIds.delete(data.recording_id);  // terminal: tek seferlik
                 renderPttTranscription(data);
                 showOwnMicResult(data);
             });
@@ -3710,6 +3718,7 @@
                 seenTranscriptionIds.clear();
                 prunedTranscriptionId = -1;
                 window._transcriptRevisions = {};
+                ownMicPendingIds.clear();  // eski backend'in kayitlari artik sonuc uretemez
                 resetSpeakerSummary();
                 const list = document.getElementById('transcriptionList');
                 if (list) list.innerHTML = EMPTY_STATE_HTML;
@@ -5316,6 +5325,23 @@
         let altPttCommandChain = Promise.resolve();
         let altPttPendingTimer = null;
         let altPttRecordingId = '';
+        // Bu sayfanin baslattigi ve henuz terminal ptt_mic_result almamis mic
+        // kayitlari. _mic_job_slots=2: A islenirken B baslayabilir; ikisinin de
+        // sonucu bu sayfaya aittir. Sinirli tutulur: basarisiz baslatma, iptal
+        // (discard), terminal sonuc, backend restart ve sayfa kapanisinda
+        // temizlenir; tasma durumunda en eski giris atilir.
+        const ownMicPendingIds = new Set();
+        const MAX_OWN_MIC_PENDING = 4;
+        function trackOwnMicId(id) {
+            if (!id) return;
+            ownMicPendingIds.add(id);
+            while (ownMicPendingIds.size > MAX_OWN_MIC_PENDING) {
+                ownMicPendingIds.delete(ownMicPendingIds.values().next().value);
+            }
+        }
+        function untrackOwnMicId(id) {
+            ownMicPendingIds.delete(id);
+        }
         async function setAltPtt(active, discard = false, recordingId = altPttRecordingId) {
             const inputLang = document.getElementById('aiTargetLang')?.value || 'auto';
             const pttMicVal = document.getElementById('pttMicSelect')?.value;
@@ -5341,6 +5367,8 @@
                 _ownMicGeneration = _replyGeneration;
                 altPttHeld = true;
                 altPttRecordingId = crypto.randomUUID();
+                trackOwnMicId(altPttRecordingId);
+                const startedRecordingId = altPttRecordingId;
                 const holdId = ++altPttHoldId;
                 queueAltPtt(true).then(data => {
                     if (altPttHeld && holdId === altPttHoldId) {
@@ -5348,6 +5376,11 @@
                     }
                 }).catch(error => {
                     console.error('Alt PTT başlatma hatası:', error);
+                    // Basarisiz start sunucuda kayit acmadi -> bu id artik sonuc
+                    // uretemez. holdId degismis olsa bile (kullanici birakip yeni
+                    // kayit baslatmis olabilir) yalniz BU istegin id'sini temizle;
+                    // yeni kaydin pending girisi korunur.
+                    untrackOwnMicId(startedRecordingId);
                     if (holdId === altPttHoldId) finishAltPtt(true);
                     setCockpitValue('ownReplyStatus', error.message);
                     showAlert(`Alt PTT başlatılamadı: ${error.message}`, 'error');
@@ -5373,7 +5406,11 @@
                 altPttPendingTimer = null;
             }
             if (!altPttHeld) return;
-            if (discard) _ownMicGeneration = null;
+            if (discard) {
+                _ownMicGeneration = null;
+                // Iptal edilen kaydin sonucu artik bu listeye dusemez.
+                untrackOwnMicId(altPttRecordingId);
+            }
             altPttHeld = false;
             updateOwnMicButton();
             queueAltPtt(false, discard).then(data => {

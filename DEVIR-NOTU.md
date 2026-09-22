@@ -1,6 +1,8 @@
 # Devir notları
 
-Güncel devir notu: [2026-09-21 18:20 — capture yaşam döngüsü denetimi + sahte 'dinleniyor' düzeltmesi](docs/devir/2026-09-21-1820.md).
+Güncel devir notu: [2026-09-22 07:57 — gece sağlamlaştırma P1–P13: sözleşme/gizlilik düzeltmeleri + okunuş fixture + overlay + soak](docs/devir/2026-09-22-0757.md).
+
+Önceki devir notu: [2026-09-21 18:20 — capture yaşam döngüsü denetimi + sahte 'dinleniyor' düzeltmesi](docs/devir/2026-09-21-1820.md).
 
 Önceki devir notu: [2026-09-21 17:32 — PR inceleme geri bildirimi: profil kaydında kayıp-güncelleme düzeltmesi](docs/devir/2026-09-21-1732.md).
 

@@ -4304,16 +4304,19 @@ class WhisperWebTranscriber:
                 # Tani: bir segment islendi; whisper bos mu dondu, dolu mu?
                 dur = len(audio_data) / float(self.RATE)
                 realtime_factor = (asr_elapsed_ms / 1000.0) / max(dur, 0.001)
+                # Tani satirinda metin ICERIGI degil yalniz uzunlugu loglanir:
+                # buyedektir.log duz-metin dosyasidir; gercek konusma icerigini
+                # transcriptions.txt disinda ikinci bir acik kopaya tasimayalim.
                 logger.info(
                     f"[transcribe diag] segment={dur:.1f}sn lang={whisper_lang} "
                     f"asr={asr_elapsed_ms:.0f}ms rtf={realtime_factor:.2f} "
                     f"queue={self.audio_queue.qsize()} "
-                    f"-> {('BOS' if not full_text else repr(full_text[:60]))}"
+                    f"-> {('BOS' if not full_text else f'{len(full_text)}chr')}"
                 )
 
                 # Halusinasyon filtresi: sahte/anlamsiz transkriptleri at
                 if full_text and self._is_likely_hallucination(full_text):
-                    logger.info(f"Halusinasyon filtrelendi: {full_text[:80]!r}")
+                    logger.info(f"Halusinasyon filtrelendi ({len(full_text)} karakter)")
                     full_text = ""
 
                 if full_text:
@@ -4432,7 +4435,8 @@ class WhisperWebTranscriber:
                             and translation_request['source_lang'] != translation_request['target_lang']):
                         transcription['translation_status'] = 'pending'
                         socketio.emit('transcription_translation_status', {
-                            'id': transcription['id'], 'status': 'pending'})
+                            'id': transcription['id'], 'status': 'pending',
+                            'revision': transcription.get('revision', 0)})
                         # En son cevrilmek uzere gonderilen id (backlog atlama kontrolu icin)
                         self._latest_translate_submit_id = transcription['id']
                         self._latest_translate_sequence += 1
@@ -5272,7 +5276,8 @@ def process_mic_audio(
             socketio.emit('ptt_mic_result', {'recording_id': recording_id, 'success': False, 'error': 'Ses anlaşılamadı'})
             return
 
-        logger.info(f"Mic transcription: {full_text}")
+        # Icerik degil uzunluk: kendi ses kaydiniz da duz-metin logda durmaz
+        logger.info(f"Mic transcription tamamlandi ({len(full_text)} karakter)")
 
         # Translate and Romanize
         translation = ""
