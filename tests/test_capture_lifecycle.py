@@ -151,6 +151,25 @@ def _wait_for(predicate, timeout=10.0, step=0.01):
     return False
 
 
+class _FakeModel:
+    """faster-whisper yerine: transcribe() tek cumle dondurur.
+
+    object() stub'i worker'i AttributeError ile olduruyordu ama hicbir test
+    bunu yalamiyordu; gercek teslim zincirini (kuyruk -> transcribe ->
+    new_transcription emit) dogrulayabilmek icin calisir bir stub gerekli.
+    """
+
+    def __init__(self):
+        self.calls = 0
+
+    def transcribe(self, *_args, **_kwargs):
+        self.calls += 1
+        seg = type('Seg', (), {'text': 'sentetik test cumlesi'})()
+        info = type('Info', (), {'language': 'en',
+                                 'language_probability': 0.95})()
+        return [seg], info
+
+
 class _LifecycleState:
     """Singleton transcriber'i start/stop denemelerine hazir duruma getirir;
     cikista thread'leri join'leyip durumu geri yukler."""
@@ -177,7 +196,7 @@ class _LifecycleState:
             t.is_paused = False
             t.ptt_active = False
             t.capture_mode = 'system'
-            t.current_model = object()  # 'model yuklu' yeterli; transcribe ses gormez
+            t.current_model = _FakeModel()  # kuyruktaki segmentleri gercekten isler
             t.current_model_name = 'fake'
             t.capture_thread = None
             t.transcribe_thread = None
@@ -431,6 +450,15 @@ class CaptureLifecycleBackendTests(unittest.TestCase):
                 self.assertEqual(len(enqueued), 2,
                                  f'PTT segmenti duplike oldu: {enqueued}')
 
+                # Teslim zinciri: kuyruga giren her segment transcribe worker'i
+                # tarafindan islendi ve new_transcription olarak yayildi.
+                # (object() stub'i worker'i AttributeError ile olduruyor ama
+                #  kuyruk sayaci yine de dogru cikiyordu -> test bos geciyordu)
+                self.assertTrue(_wait_for(
+                    lambda: len(_by_name(events, 'new_transcription')) >= 2,
+                    timeout=5),
+                    'birakilan PTT segmentleri new_transcription olarak gelmedi')
+
                 # Beklemedeyken PTT: kareler yine toplanip tek segment olarak
                 # kuyruga girmeli (pause normal sesi atar ama PTT'yi disarida birakir)
                 rr = self.client.post('/api/pause', json={'paused': True})
@@ -455,6 +483,15 @@ class CaptureLifecycleBackendTests(unittest.TestCase):
                     self.assertAlmostEqual(size, expected,
                                            delta=self.t.CHUNK_SIZE)
                 self.assertGreater(enqueued[2], 10 * self.t.CHUNK_SIZE)
+
+                # Ucuncu segment de teslim edildi; model gercekten cagrildi
+                # (AttributeError ile bos gecemez).
+                self.assertTrue(_wait_for(
+                    lambda: len(_by_name(events, 'new_transcription')) >= 3,
+                    timeout=5),
+                    'beklemede birakilan PTT sonucu yayinmadi')
+                self.assertGreaterEqual(self.t.current_model.calls, 3,
+                                        'model stub hic cagrilmadi')
             self.client.post('/api/stop')
 
     # ── P3a) bayat partial: cumle finalize olduysa onizleme yayilmaz ────

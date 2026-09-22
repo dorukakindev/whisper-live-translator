@@ -286,6 +286,7 @@ app.whenReady().then(async () => {
     // Kendi kaydimizin sonucu ise islenmeli (sahiplik eslesmesi gecerli)
     s = await run(`(()=>{
         altPttRecordingId = 'benim-kayit-uuid';
+        trackOwnMicId(altPttRecordingId);  // startOwnReplyMic'in yaptigi izleme
         const itemsBefore = document.querySelectorAll('.transcription-item').length;
         socket._events.ptt_mic_result({recording_id:'benim-kayit-uuid', success:true,
             id:902, original:'merhaba', translation:'hello',
@@ -294,6 +295,52 @@ app.whenReady().then(async () => {
             has9002: !!document.querySelector('[data-transcription-id="902"]')};
     })()`);
     step('P1b own ptt_mic_result renders', s.items === 1 && s.has9002, s);
+
+    // ── P1c) ayni sayfanin iki kaydi: backend _mic_job_slots=2 oldugu icin
+    //         A islenirken B baslayabilir. A'nin gec gelen sonucu bu sayfaya
+    //         ait -> satir gorunmeli; yabanci istemci yine reddedilmeli.
+    //         Iptal edilen B'nin sonucu ise artik kabul edilmemeli. ─────────
+    s = await run(`(async()=>{
+        // A baslat -> birak (sunucuda islemeye girdi)
+        startOwnReplyMic();
+        const idA = altPttRecordingId;
+        await new Promise(r=>setTimeout(r,0));
+        finishAltPtt();  // discard=false: sonuc bekleniyor -> idA pending kalir
+        await new Promise(r=>setTimeout(r,0));
+        // A islenirken B basla -> aktif kayit B oldu
+        startOwnReplyMic();
+        const idB = altPttRecordingId;
+        await new Promise(r=>setTimeout(r,0));
+        const itemsBefore = document.querySelectorAll('.transcription-item').length;
+        const alertsBefore = window.__alerts.length;
+        // A'nin gec sonucu: bu sayfaya ait -> SATIR olusmali
+        socket._events.ptt_mic_result({recording_id:idA, success:true,
+            id:904, original:'a sesi', translation:'a sound',
+            target_lang:'EN', romanized:'ey-saund', timestamp:'12:00:04'});
+        // yabanci istemcinin sonucu yine reddedilmeli
+        socket._events.ptt_mic_result({recording_id:'yabanci-uuid', success:true,
+            id:905, original:'yabanci', translation:'foreign', target_lang:'EN'});
+        // B'yi iptal et (discard): terminal sonucu artik kabul edilmemeli
+        finishAltPtt(true);
+        await new Promise(r=>setTimeout(r,0));
+        socket._events.ptt_mic_result({recording_id:idB, success:true,
+            id:906, original:'b sesi', translation:'b sound', target_lang:'EN'});
+        const pending = (typeof ownMicPendingIds === 'undefined')
+            ? null : id => ownMicPendingIds.has(id);
+        return {idA, idB,
+            hasA: !!document.querySelector('[data-transcription-id="904"]'),
+            hasForeign: !!document.querySelector('[data-transcription-id="905"]'),
+            hasDiscardedB: !!document.querySelector('[data-transcription-id="906"]'),
+            pendingA: pending === null ? null : pending(idA),
+            pendingB: pending === null ? null : pending(idB),
+            pendingForeign: pending === null ? null : pending('yabanci-uuid'),
+            items: document.querySelectorAll('.transcription-item').length - itemsBefore,
+            newAlerts: window.__alerts.length - alertsBefore};
+    })()`);
+    step('P1c late own result renders; foreign + discarded still rejected',
+        s.hasA === true && s.hasForeign === false && s.hasDiscardedB === false
+        && s.items === 1 && s.pendingA === false && s.pendingB === false
+        && s.pendingForeign === false, s);
 
     // ── P4) satir silindikten sonra gec gelen AI/ceviri yaniti satiri
     //         geri getirmemeli (renderAiResult eksik-elemanda erken doner) ──
