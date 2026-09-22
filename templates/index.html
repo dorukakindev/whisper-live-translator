@@ -5368,6 +5368,7 @@
                 altPttHeld = true;
                 altPttRecordingId = crypto.randomUUID();
                 trackOwnMicId(altPttRecordingId);
+                const startedRecordingId = altPttRecordingId;
                 const holdId = ++altPttHoldId;
                 queueAltPtt(true).then(data => {
                     if (altPttHeld && holdId === altPttHoldId) {
@@ -5375,6 +5376,11 @@
                     }
                 }).catch(error => {
                     console.error('Alt PTT başlatma hatası:', error);
+                    // Basarisiz start sunucuda kayit acmadi -> bu id artik sonuc
+                    // uretemez. holdId degismis olsa bile (kullanici birakip yeni
+                    // kayit baslatmis olabilir) yalniz BU istegin id'sini temizle;
+                    // yeni kaydin pending girisi korunur.
+                    untrackOwnMicId(startedRecordingId);
                     if (holdId === altPttHoldId) finishAltPtt(true);
                     setCockpitValue('ownReplyStatus', error.message);
                     showAlert(`Alt PTT başlatılamadı: ${error.message}`, 'error');

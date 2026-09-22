@@ -342,6 +342,83 @@ app.whenReady().then(async () => {
         && s.items === 1 && s.pendingA === false && s.pendingB === false
         && s.pendingForeign === false, s);
 
+    // ── P1d) hizli birakma + gec basarisiz start: /api/ptt_mic 409 doner.
+    //         Kullanici biraktigi icin altPttHeld=false -> catch'teki
+    //         finishAltPtt(true) erken cikar; basarisiz start'in id'si
+    //         yine de pending'den silinmeli (yoksa cap 4 gercek kayitlari evir). ──
+    s = await run(`(async()=>{
+        const origFetch = window.fetch;
+        window.fetch = (url, opts) => {
+            if (url === '/api/ptt_mic') {
+                const body = JSON.parse(opts.body);
+                if (body.active === true) {
+                    return Promise.resolve({ok:false, status:409,
+                        json:async()=>({success:false, error:'catisma'})});
+                }
+            }
+            return origFetch(url, opts);
+        };
+        startOwnReplyMic();
+        const idA = altPttRecordingId;
+        finishAltPtt();            // kullanici hemen birakti (discard=false)
+        await new Promise(r=>setTimeout(r,20));  // komut zinciri + 409 islesin
+        window.fetch = origFetch;
+        const pending = (typeof ownMicPendingIds === 'undefined') ? null
+            : id => ownMicPendingIds.has(id);
+        return {idA, held: altPttHeld,
+            pendingA: pending === null ? null : pending(idA)};
+    })()`);
+    step('P1d failed start after quick release untracks id',
+        s.held === false && s.pendingA === false, s);
+
+    // ── P1e) A islenirken B'nin start'i basarisiz: yalniz B'nin id'si silinir;
+    //         A pending'de kalir ve sonucu satir olarak gorunur. ─────────────
+    s = await run(`(async()=>{
+        const origFetch = window.fetch;
+        let startCalls = 0;
+        window.fetch = (url, opts) => {
+            if (url === '/api/ptt_mic') {
+                const body = JSON.parse(opts.body);
+                if (body.active === true) {
+                    startCalls++;
+                    if (startCalls >= 2) {  // B'nin start'i basarisiz
+                        return Promise.resolve({ok:false, status:409,
+                            json:async()=>({success:false, error:'slot dolu'})});
+                    }
+                }
+            }
+            return origFetch(url, opts);
+        };
+        // A: basarili start + birak -> sunucuda islemede (pending)
+        startOwnReplyMic();
+        const idA = altPttRecordingId;
+        await new Promise(r=>setTimeout(r,10));
+        finishAltPtt();
+        await new Promise(r=>setTimeout(r,10));
+        // B: start basarisiz
+        startOwnReplyMic();
+        const idB = altPttRecordingId;
+        await new Promise(r=>setTimeout(r,20));
+        window.fetch = origFetch;
+        const itemsBefore = document.querySelectorAll('.transcription-item').length;
+        socket._events.ptt_mic_result({recording_id:idA, success:true,
+            id:907, original:'a sonuc', translation:'a result', target_lang:'EN'});
+        // B'nin hic kabul edilmeyen kaydina sonuc gelirse reddedilmeli
+        socket._events.ptt_mic_result({recording_id:idB, success:true,
+            id:908, original:'b sonuc', translation:'b result', target_lang:'EN'});
+        const pending = (typeof ownMicPendingIds === 'undefined') ? null
+            : id => ownMicPendingIds.has(id);
+        return {idA, idB,
+            hasA: !!document.querySelector('[data-transcription-id="907"]'),
+            hasB: !!document.querySelector('[data-transcription-id="908"]'),
+            pendingA: pending === null ? null : pending(idA),
+            pendingB: pending === null ? null : pending(idB),
+            items: document.querySelectorAll('.transcription-item').length - itemsBefore};
+    })()`);
+    step('P1e failed B start cannot evict pending A; A still renders',
+        s.hasA === true && s.hasB === false && s.items === 1
+        && s.pendingA === false && s.pendingB === false, s);
+
     // ── P4) satir silindikten sonra gec gelen AI/ceviri yaniti satiri
     //         geri getirmemeli (renderAiResult eksik-elemanda erken doner) ──
     s = await run(`(async()=>{
