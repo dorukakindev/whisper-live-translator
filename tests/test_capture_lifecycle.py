@@ -191,6 +191,7 @@ class _LifecycleState:
                 'handshake': getattr(t, '_capture_handshake', None),
                 'audio_test_active': t._audio_test_active,
                 'stop_in_progress': t._stop_in_progress,
+                'capture_phase': t._capture_phase,
             }
             t.is_running = False
             t.is_paused = False
@@ -228,6 +229,7 @@ class _LifecycleState:
             t._capture_handshake = s['handshake']  # eski kodda yok; set etmek zararsiz
             t._audio_test_active = s['audio_test_active']
             t._stop_in_progress = s['stop_in_progress']
+            t._capture_phase = s['capture_phase']
 
 
 class CaptureLifecycleBackendTests(unittest.TestCase):
@@ -278,6 +280,9 @@ class CaptureLifecycleBackendTests(unittest.TestCase):
         self.assertEqual(len(stopped), 1)
         self.assertEqual(stopped[0].get('reason'), 'error')
         self.assertIsNotNone(stopped[0].get('session_id'))
+        # Basarisiz start'tan sonra /api/stats bayat 'listening' rapor etmemeli.
+        self.assertEqual(self.t._capture_phase, 'idle',
+                         'basarisiz start _capture_phase takili birakti')
 
     # ── 3b) el sikismasi gercekten bekler: thread p.open icindeyken yanit
     #        donmemeli ────────────────────────────────────────────────────
@@ -320,6 +325,8 @@ class CaptureLifecycleBackendTests(unittest.TestCase):
             self.t.capture_thread.join(timeout=10)
         self.assertFalse(self.t.is_running,
                          'cihaz kopunca is_running temizlenmedi')
+        self.assertEqual(self.t._capture_phase, 'idle',
+                         'cihaz kopmasinda _capture_phase takili kaldi')
         stopped = _by_name(events, 'capture_stopped')
         self.assertTrue(stopped, 'cihaz kopmasinda capture_stopped emit edilmedi')
         self.assertEqual(stopped[-1].get('reason'), 'error')

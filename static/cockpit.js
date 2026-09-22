@@ -293,6 +293,20 @@ function invalidateReplyCockpit(message = 'Bir transkript seçin.') {
     if (options) options.innerHTML = '<div class="reply-cockpit-empty">Henüz seçili bir konuşma yok.</div>';
 }
 
+function failReplyCockpit(id, message) {
+    // Basarisiz cevap istegi dock'u sonsuza dek 'hazirlaniyor' birakmamali.
+    // Dock'a ait istek baska bir transkripte/devre tasindiysa dokunma.
+    if (_replyTargetId !== String(id)) return;
+    const host = document.getElementById('replyCockpitOptions');
+    const hasOptions = !!(host && host.querySelector('.reply-option-card'));
+    setCockpitValue('replyCockpitProgress',
+        hasOptions ? 'Kalan seçenekler alınamadı' : (message || 'Cevap alınamadı'));
+    if (host && !hasOptions) {
+        host.innerHTML = `<div class="reply-cockpit-empty">${escapeHtml(
+            message || 'Cevap alınamadı. Cevap öner düğmesiyle tekrar deneyin.')}</div>`;
+    }
+}
+
 function renderReplyCockpit(id, options, effectiveLang, langLabel, partial) {
     if (_replyTargetId !== String(id)) return;
     const host = document.getElementById('replyCockpitOptions');

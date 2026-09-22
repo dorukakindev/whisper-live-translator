@@ -4157,6 +4157,13 @@ class WhisperWebTranscriber:
             with self._lifecycle_lock:
                 if self._session_id == session_id:
                     self.is_running = False
+                    # Thread beklenmedik bittiginde (cihaz acma hatasi, okuma
+                    # hatasi) _capture_phase 'listening'/'speaking' takili
+                    # kaliyordu ve /api/stats durmus bir oturumu hala
+                    # "dinliyor" gosteriyordu; kapanista idle'a dondur.
+                    # (_asr_active transcribe thread'inin alani; kendi
+                    # finally'sinde sifirlanir, burada dokunma.)
+                    self._capture_phase = 'idle'
                     # Eski oturumun kapanışı, hızlı bir stop+start sonrasında yeni
                     # oturumu UI'da yanlışlıkla "Durduruldu" göstermemeli; ayrica
                     # frontend kendi oturum kimligiyle eslestirerek gecikmis bir
