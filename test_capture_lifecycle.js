@@ -264,6 +264,33 @@ app.whenReady().then(async () => {
     step('R2 stale stopped cannot cancel pending start', s.capturing === true
         && s.sessionId === 6 && !s.stopDisabled, s);
 
+    // ── P1) ptt_mic_result broadcast: baska istemcinin kaydi bu sayfanin
+    //         listesine ve uyarilarina sizmamali (recording_id sahipligi) ──
+    s = await run(`(()=>{
+        const itemsBefore = document.querySelectorAll('.transcription-item').length;
+        const alertsBefore = window.__alerts.length;
+        socket._events.ptt_mic_result({recording_id:'baska-uuid-1', success:true,
+            id:901, original:'yabanci metin', translation:'foreign text',
+            target_lang:'EN', romanized:'foreyn tekst', timestamp:'12:00:01'});
+        socket._events.ptt_mic_result({recording_id:'baska-uuid-2', success:false,
+            error:'uzak istemci hatasi'});
+        return {items: document.querySelectorAll('.transcription-item').length - itemsBefore,
+            newAlerts: window.__alerts.length - alertsBefore};
+    })()`);
+    step('P1a foreign ptt_mic_result ignored', s.items === 0 && s.newAlerts === 0, s);
+
+    // Kendi kaydimizin sonucu ise islenmeli (sahiplik eslesmesi gecerli)
+    s = await run(`(()=>{
+        altPttRecordingId = 'benim-kayit-uuid';
+        const itemsBefore = document.querySelectorAll('.transcription-item').length;
+        socket._events.ptt_mic_result({recording_id:'benim-kayit-uuid', success:true,
+            id:902, original:'merhaba', translation:'hello',
+            target_lang:'EN', romanized:'he-lo', timestamp:'12:00:02'});
+        return {items: document.querySelectorAll('.transcription-item').length - itemsBefore,
+            has9002: !!document.querySelector('[data-transcription-id="902"]')};
+    })()`);
+    step('P1b own ptt_mic_result renders', s.items === 1 && s.has9002, s);
+
     await win.webContents.executeJavaScript('void 0');
     if (failures.length) {
         console.error('BASARISIZ:', failures.join(' | '));

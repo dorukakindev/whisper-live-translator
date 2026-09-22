@@ -3651,6 +3651,11 @@
 
             // PTT ve hydration ayni kimlik/budama sozlesmesini kullanir.
             socket.on('ptt_mic_result', data => {
+                // ptt_mic_result tum istemcilere yayilir: sonucu yalniz BU sayfanin
+                // baslattigi kayit (altPttRecordingId) sahiplenir. Baska istemcinin
+                // basari/hata sonucu bu listeye kayit satiri ekleyemez veya
+                // sahibi olmadigi hata uyarisini basamaz.
+                if (!data || !data.recording_id || data.recording_id !== altPttRecordingId) return;
                 renderPttTranscription(data);
                 showOwnMicResult(data);
             });

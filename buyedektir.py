@@ -4432,7 +4432,8 @@ class WhisperWebTranscriber:
                             and translation_request['source_lang'] != translation_request['target_lang']):
                         transcription['translation_status'] = 'pending'
                         socketio.emit('transcription_translation_status', {
-                            'id': transcription['id'], 'status': 'pending'})
+                            'id': transcription['id'], 'status': 'pending',
+                            'revision': transcription.get('revision', 0)})
                         # En son cevrilmek uzere gonderilen id (backlog atlama kontrolu icin)
                         self._latest_translate_submit_id = transcription['id']
                         self._latest_translate_sequence += 1

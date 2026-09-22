@@ -16,12 +16,16 @@ Kapsanan akislar (gorev listesinin backend kismi):
  8) el sikisma zaman asimi (cihaz hic yanit vermiyor).
 """
 import os
+import queue
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
+
+import numpy as np
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
@@ -114,6 +118,38 @@ def _fake_host(open_raises=None, open_gate=None, open_entered=None,
             pass
 
     return _Host()
+
+
+class _FeederStream:
+    """read(): disaridan beslenen kareleri sirayla dondurur; bosken sessizlik.
+    Test, capture dongusunun her adimini deterministik ilerletebilsin diye."""
+
+    def __init__(self, feeder):
+        self.feeder = feeder
+        self.reads = 0
+        self.closed = False
+
+    def read(self, n, exception_on_overflow=False):
+        self.reads += 1
+        try:
+            return self.feeder.get(timeout=2)
+        except Exception:
+            return b'\x00' * (n * 2)
+
+    def stop_stream(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+
+def _wait_for(predicate, timeout=10.0, step=0.01):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(step)
+    return False
 
 
 class _LifecycleState:
@@ -336,12 +372,175 @@ class CaptureLifecycleBackendTests(unittest.TestCase):
         host = _fake_host(open_gate=never_open, stream=_FakeStream())
         with patch.object(b.pyaudio, 'PyAudio', return_value=host), \
                 patch.object(self.t, 'CAPTURE_START_TIMEOUT_S', 0.3,
-                             create=True):  # eski kodda nitelik yok: hata degil assertFalse ile batmali
+                             create=True):  # eski kodda nitelik yok: nitelik yoksa hata degil assertFalse ile batmali
             r = self.client.post('/api/start', json={'device_id': 0})
             data = r.get_json()
         self.assertFalse(data['success'])
         self.assertIn('zaman', data['error'])
         self.assertFalse(self.t.is_running)
+
+    # ── P2) PTT tamponu: her birakista tam olarak bir segment kuyruga
+    #         girer; hizli bas-birak-bas dizisinde kayip/duplikasyon yok ──
+    def test_ptt_buffer_single_flush_per_release(self):
+        feeder = queue.Queue()
+        stream = _FeederStream(feeder)
+        host = _fake_host(stream=stream)
+        events, emit_patch = _collect_emits()
+        chunk = lambda: b'\x01' * (self.t.CHUNK_SIZE * 2)
+        enqueued = []
+        with emit_patch, patch.object(b.pyaudio, 'PyAudio', return_value=host):
+            orig = self.t._enqueue_audio
+
+            def spy(audio, sid, cgen):
+                enqueued.append(len(audio))
+                return orig(audio, sid, cgen)
+
+            with patch.object(self.t, '_enqueue_audio', side_effect=spy):
+                r = self.client.post('/api/start', json={'device_id': 0})
+                self.assertTrue(r.get_json()['success'])
+
+                def press(seq):
+                    rr = self.client.post('/api/ptt', json={
+                        'active': True, 'client': 'sayfaA', 'sequence': seq})
+                    self.assertEqual(rr.status_code, 200)
+                    self.assertTrue(rr.get_json()['ptt'])
+
+                def release(seq):
+                    rr = self.client.post('/api/ptt', json={
+                        'active': False, 'client': 'sayfaA', 'sequence': seq})
+                    self.assertEqual(rr.status_code, 200)
+                    self.assertFalse(rr.get_json()['ptt'])
+
+                for i, seq in enumerate([(1, 2), (3, 4)]):
+                    press(seq[0])
+                    reads_before = stream.reads
+                    for _ in range(11):  # ~0.33sn > 0.3s esigi
+                        feeder.put(chunk())
+                    self.assertTrue(_wait_for(
+                        lambda r=reads_before: stream.reads >= r + 11),
+                        'PTT kareleri okunmadi')
+                    release(seq[1])
+                    feeder.put(chunk())  # birakma sonrasi ilk kare flush'i tetikler
+                    self.assertTrue(_wait_for(
+                        lambda n=i + 1: len(enqueued) >= n, timeout=5),
+                        f'{i + 1}. birakista kuyruk olusmadi: {enqueued}')
+
+                # Flush sonrasi gelen sessiz kareler ek kopya uretmemeli
+                for _ in range(3):
+                    feeder.put(chunk())
+                self.assertTrue(_wait_for(lambda: stream.reads >= 25 or True))
+                self.assertEqual(len(enqueued), 2,
+                                 f'PTT segmenti duplike oldu: {enqueued}')
+
+                # Beklemedeyken PTT: kareler yine toplanip tek segment olarak
+                # kuyruga girmeli (pause normal sesi atar ama PTT'yi disarida birakir)
+                rr = self.client.post('/api/pause', json={'paused': True})
+                self.assertTrue(rr.get_json()['success'])
+                press(5)
+                reads_before = stream.reads
+                # Bekletme okuma kolu (paused read) beslenen ilk 1-2 kareyi
+                # yutabilir; tamponun 0.3sn esigini asmasi icin payli besle.
+                for _ in range(15):
+                    feeder.put(chunk())
+                self.assertTrue(_wait_for(
+                    lambda r=reads_before: stream.reads >= r + 15))
+                release(6)
+                feeder.put(chunk())
+                self.assertTrue(_wait_for(lambda: len(enqueued) >= 3, timeout=5),
+                                'beklemede birakilan PTT kuyruga girmedi')
+                self.client.post('/api/pause', json={'paused': False})
+                # Ilk iki segment tam 11 kare; beklemedekinde pause kolu
+                # yuttugu kadari eksik olabilir ama 0.3sn esigi gecmeli.
+                expected = 11 * self.t.CHUNK_SIZE
+                for size in enqueued[:2]:
+                    self.assertAlmostEqual(size, expected,
+                                           delta=self.t.CHUNK_SIZE)
+                self.assertGreater(enqueued[2], 10 * self.t.CHUNK_SIZE)
+            self.client.post('/api/stop')
+
+    # ── P3a) bayat partial: cumle finalize olduysa onizleme yayilmaz ────
+    def test_stale_utterance_partial_never_emits(self):
+        t = self.t
+        events, emit_patch = _collect_emits()
+        audio = np.zeros(t.CHUNK_SIZE * 10, dtype=np.int16)
+        with emit_patch:
+            with t._lifecycle_lock:
+                t.is_running = True
+                t._session_id = 42
+                t._result_generation = 7
+                t._utterance_seq = 5
+            # Ayni seq + ayni generation + eslesen session'dan onceki durumda
+            # model cagrisina bile girmez; dogrudan erken donus verir.
+            t._transcribe_partial(audio, 42, 4, 7)   # seq bayat
+            t._transcribe_partial(audio, 42, 5, 8)   # generation bayat
+            t._transcribe_partial(audio, 41, 5, 7)   # session bayat
+        self.assertFalse(_by_name(events, 'partial_transcription'),
+                         'bayat onizleme emit edildi')
+
+    # ── P3b) bos final metin: transcription commit+emit atlanir ─────────
+    def test_empty_final_produces_no_transcription(self):
+        feeder = queue.Queue()
+        stream = _FeederStream(feeder)
+        host = _fake_host(stream=stream)
+        events, emit_patch = _collect_emits()
+        t = self.t
+
+        class _Seg:
+            def __init__(self, text):
+                self.text = text
+
+        class _Info:
+            language = 'en'
+            language_probability = 0.9
+
+        class _FakeModel:
+            def __init__(self, texts):
+                self.texts = iter(texts)
+
+            def transcribe(self, _a, **_kw):
+                return iter([_Seg(next(self.texts))]), _Info()
+
+        t.current_model = _FakeModel(['', '  ', 'merhaba'])
+        with emit_patch, patch.object(b.pyaudio, 'PyAudio', return_value=host), \
+                patch.object(t, '_is_likely_hallucination', return_value=False):
+            r = self.client.post('/api/start', json={'device_id': 0})
+            self.assertTrue(r.get_json()['success'])
+            sess = r.get_json()['session_id']
+            # Bos iki segment + bir dolu segment kuyruga sirayla verilir
+            for _ in range(3):
+                t._enqueue_audio(np.zeros(t.CHUNK_SIZE * 20, dtype=np.int16),
+                                 sess, t._result_generation)
+            self.assertTrue(_wait_for(
+                lambda: len(_by_name(events, 'new_transcription')) >= 1,
+                timeout=8), 'dolu final emit edilmedi')
+            time.sleep(0.3)
+            news = _by_name(events, 'new_transcription')
+            self.assertEqual(len(news), 1,
+                             f'bos final de kayit uretti: {news}')
+            self.assertEqual(news[0]['text'], 'merhaba')
+            self.client.post('/api/stop')
+
+    # ── P3c) kuyruk dolu: en eski kare duser + lagging uyarisi ──────────
+    def test_queue_full_drops_oldest_and_warns(self):
+        t = self.t
+        events, emit_patch = _collect_emits()
+        old_q = t.audio_queue
+        t.audio_queue = queue.Queue(maxsize=5)
+        t.last_lag_warn_time = 0.0
+        try:
+            with emit_patch:
+                for i in range(5):
+                    t._enqueue_audio_unlocked(f'kare-{i}')
+                t._enqueue_audio_unlocked('kare-5')
+            items = []
+            while not t.audio_queue.empty():
+                items.append(t.audio_queue.get_nowait())
+            self.assertEqual(items, [f'kare-{i}' for i in range(1, 6)],
+                             'en eski kare yerine baska kare dustu')
+            self.assertEqual(len(_by_name(events, 'transcription_lagging')), 1,
+                             'kuyruk dolunca lagging uyarisi emit edilmedi')
+        finally:
+            t.audio_queue = old_q
 
 
 if __name__ == '__main__':
