@@ -6085,14 +6085,21 @@
                         button.disabled = false;
                         button.textContent = originalText;
                     }
+                    if (mode !== 'translate' && typeof failReplyCockpit === 'function') {
+                        failReplyCockpit(id, data.error || 'Cevap alınamadı.');
+                    }
                 }
             } catch (error) {
                 const stillOwner = transcriptRevision === ((window._transcriptRevisions || {})[id] || 0)
                     && (mode === 'translate' || (window._activeAnswerRequests || {})[id] === requestId);
                 if (stillOwner) {
-                    showAlert(error.name === 'AbortError' ? 'AI isteği zaman aşımına uğradı; tekrar deneyebilirsiniz.' : '❌ Bağlantı hatası', 'error');
+                    const errText = error.name === 'AbortError' ? 'AI isteği zaman aşımına uğradı; tekrar deneyebilirsiniz.' : '❌ Bağlantı hatası';
+                    showAlert(errText, 'error');
                     button.disabled = false;
                     button.textContent = originalText;
+                    if (mode !== 'translate' && typeof failReplyCockpit === 'function') {
+                        failReplyCockpit(id, error.name === 'AbortError' ? 'İstek zaman aşımına uğradı.' : 'Cevap alınamadı.');
+                    }
                 }
             } finally {
                 clearTimeout(requestTimeout);

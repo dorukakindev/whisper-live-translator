@@ -105,7 +105,7 @@ async function translateOwnReply() {
         const message = error.name === 'AbortError' ? 'Çeviri zaman aşımına uğradı. Tekrar dene.' : error.message;
         setCockpitValue('ownReplyStatus', message);
         if (generation === _replyGeneration) {
-            setCockpitValue('replyCockpitProgress', 'Çeviri alınamadı');
+            setCockpitValue('replyCockpitProgress', 'Çeviri alınamadı', 'error');
             setCockpitValue('replyCockpitOptions', 'Metnin korundu. Çevir düğmesiyle tekrar deneyebilirsin.');
         }
     } finally {
@@ -291,6 +291,20 @@ function invalidateReplyCockpit(message = 'Bir transkript seçin.') {
     setCockpitValue('replyCockpitProgress', '');
     const options = document.getElementById('replyCockpitOptions');
     if (options) options.innerHTML = '<div class="reply-cockpit-empty">Henüz seçili bir konuşma yok.</div>';
+}
+
+function failReplyCockpit(id, message) {
+    // Basarisiz cevap istegi dock'u sonsuza dek 'hazirlaniyor' birakmamali.
+    // Dock'a ait istek baska bir transkripte/devre tasindiysa dokunma.
+    if (_replyTargetId !== String(id)) return;
+    const host = document.getElementById('replyCockpitOptions');
+    const hasOptions = !!(host && host.querySelector('.reply-option-card'));
+    setCockpitValue('replyCockpitProgress',
+        hasOptions ? 'Kalan seçenekler alınamadı' : (message || 'Cevap alınamadı'), 'error');
+    if (host && !hasOptions) {
+        host.innerHTML = `<div class="reply-cockpit-empty">${escapeHtml(
+            message || 'Cevap alınamadı. Cevap öner düğmesiyle tekrar deneyin.')}</div>`;
+    }
 }
 
 function renderReplyCockpit(id, options, effectiveLang, langLabel, partial) {

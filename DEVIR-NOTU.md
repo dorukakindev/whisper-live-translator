@@ -1,6 +1,8 @@
 # Devir notları
 
-Güncel devir notu: [2026-09-22 16:12 — repo görselliği: README yenileme + gerçek ikonlar](docs/devir/2026-09-22-1612.md).
+Güncel devir notu: [2026-09-22 18:27 — bug_catcher turu: takili durum göstergeleri (cevap dock'u + capture_phase)](docs/devir/2026-09-22-1827.md).
+
+Önceki devir notu: [2026-09-22 16:12 — repo görselliği: README yenileme + gerçek ikonlar](docs/devir/2026-09-22-1612.md).
 
 Önceki devir notu: [2026-09-22 07:57 — gece sağlamlaştırma P1–P13: sözleşme/gizlilik düzeltmeleri + okunuş fixture + overlay + soak](docs/devir/2026-09-22-0757.md).
 

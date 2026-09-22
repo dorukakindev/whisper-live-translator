@@ -530,6 +530,67 @@ app.whenReady().then(async () => {
     step('P8 xss payload stays inert', s.fired === false && s.img === false
         && s.script === false && s.textKept === true, s);
 
+    // ── P9) basarisiz 'Cevap öner' istegi dock'u 'hazirlaniyor' birakmamali ──
+    // selectReplyTarget dock'u 'Cevaplar hazırlanıyor.' yapar; basarili istek
+    // renderReplyCockpit ile gunceller ama basarisiz istegin dock'u hic
+    // guncelleyen yolu yoktu -> sonsuza dek 'hazirlaniyor' takili kaliyordu.
+    s = await run(`(async()=>{
+        socket._events.new_transcription({id:91001, text:'hallo welt',
+            timestamp:'12:10:00', model_language:'DE', source:'system',
+            instance_id:'fx-1'});
+        const btn = document.querySelector('[data-transcription-id="91001"] .ai-answer-btn');
+        if (!btn) return {missing: true};
+        window.__aiDeferred = Promise.resolve({success:false, error:'anahtar eksik'});
+        getAIResponseById(91001, 'answer', btn);
+        // getAIResponseById senkron sarmalayici; icteki async istegin bitmesini
+        // sahiplik kaydinin silinmesiyle (finally) bekle.
+        for (let i = 0; i < 100 && (window._activeAnswerRequests || {})[91001]; i++) {
+            await new Promise(r => setTimeout(r, 10));
+        }
+        window.__aiDeferred = null;
+        const opts = document.getElementById('replyCockpitOptions');
+        const progress = document.getElementById('replyCockpitProgress');
+        return {missing: false,
+            dockStuck: opts.textContent.includes('hazırlanıyor')
+                && !opts.querySelector('.reply-option-card'),
+            progressText: progress.textContent,
+            progressState: progress.dataset.state,
+            btnDisabled: btn.disabled,
+            btnHidden: btn.style.display === 'none'};
+    })()`);
+    step('P9a failed answer request clears reply dock', s.missing === false
+        && s.dockStuck === false && s.progressText !== ''
+        && !s.progressText.includes('Hazırlanıyor')
+        && s.progressState === 'error'
+        && s.btnDisabled === false && s.btnHidden === false, s);
+
+    // ── P9b) basarili istek dock'a gercek secenekleri cizer ────────────
+    s = await run(`(async()=>{
+        socket._events.new_transcription({id:91002, text:'wie gehts',
+            timestamp:'12:11:00', model_language:'DE', source:'system',
+            instance_id:'fx-1'});
+        const btn = document.querySelector('[data-transcription-id="91002"] .ai-answer-btn');
+        if (!btn) return {missing: true};
+        window.__aiDeferred = Promise.resolve({success:true, options:[
+            {romanized:'gut dank', turkish:'İyiyim teşekkürler',
+             translation:'Gut, danke', language:'DE'}]});
+        getAIResponseById(91002, 'answer', btn);
+        for (let i = 0; i < 100 && (window._activeAnswerRequests || {})[91002]; i++) {
+            await new Promise(r => setTimeout(r, 10));
+        }
+        window.__aiDeferred = null;
+        const opts = document.getElementById('replyCockpitOptions');
+        return {missing: false,
+            cardCount: opts.querySelectorAll('.reply-option-card').length,
+            progressText: document.getElementById('replyCockpitProgress').textContent,
+            progressState: document.getElementById('replyCockpitProgress').dataset.state,
+            btnHidden: btn.style.display === 'none'};
+    })()`);
+    step('P9b successful answer renders dock options', s.missing === false
+        && s.cardCount === 1 && s.progressText.includes('seçenek')
+        && s.progressState !== 'error'
+        && s.btnHidden === true, s);
+
     await win.webContents.executeJavaScript('void 0');
     if (failures.length) {
         console.error('BASARISIZ:', failures.join(' | '));
