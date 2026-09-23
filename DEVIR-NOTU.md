@@ -1,6 +1,8 @@
 # Devir notları
 
-Güncel devir notu: [2026-09-23 16:35 — canli QA hata paketi: çift toast + i18n dinamik buton + mic açma mesajı](docs/devir/2026-09-23-1635.md).
+Güncel devir notu: [2026-09-23 17:41 — cevap-önerisi kalite/latency harness'i (stub'lı)](docs/devir/2026-09-23-1741.md).
+
+Önceki devir notu: [2026-09-23 16:35 — canli QA hata paketi: çift toast + i18n dinamik buton + mic açma mesajı](docs/devir/2026-09-23-1635.md).
 
 Önceki devir notu: [2026-09-22 18:27 — bug_catcher turu: takili durum göstergeleri (cevap dock'u + capture_phase)](docs/devir/2026-09-22-1827.md).
 
