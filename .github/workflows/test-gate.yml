@@ -1,0 +1,144 @@
+name: Test gate
+
+# Yerelde dogrulanan suite'lerin GitHub Actions karsiligi:
+#   backend  -> pyflakes/py_compile + pytest tests/ + test_smoke.py + npm run scan
+#   frontend -> node --check (tum betikler + inline sablon bloklari) +
+#               duz node testleri + xvfb altinda Electron fixture testleri
+# pyaudiowpatch Windows-only oldugundan Linux'ta stub'lanir (blueprint ile
+# ayni yaklasim); torch/torchaudio/faster-whisper/pyannote test yollarinda
+# hic cagrilmayan tembel import'lardir, CI'da kurulmaz (hizli kapı).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install test dependencies
+        run: |
+          # requirements.txt'nin CI-suzenlenmis hali: Windows-only pyaudiowpatch
+          # ve hic cagirilmayan agir tembel import'lar (torchaudio,
+          # pyannote.audio) atilir. torch CPU-only index'ten, faster-whisper
+          # PyPI'dan ayrica kurulur — smoke'un transkribe/diarization alt
+          # testleri gercek modul ister (stub yetmez).
+          sed -E '/^(pyaudiowpatch|torch|torchaudio|faster-whisper|pyannote\.audio)/d' \
+              requirements.txt > /tmp/requirements-ci.txt
+          pip install -r /tmp/requirements-ci.txt pyflakes pytest
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install faster-whisper
+
+      - name: Stub pyaudiowpatch for Linux
+        run: |
+          SITE=$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+          cat > "$SITE/pyaudiowpatch.py" <<'EOF'
+          paInt16 = 8
+          paWASAPI = 13
+
+
+          class PyAudio:
+              def get_host_api_info_by_type(self, _api_type):
+                  return {'deviceCount': 0}
+
+              def get_device_count(self):
+                  return 0
+
+              def get_device_info_by_index(self, _index):
+                  raise OSError('pyaudiowpatch is unavailable on this Linux environment')
+
+              def open(self, **_kwargs):
+                  raise OSError('pyaudiowpatch is unavailable on this Linux environment')
+
+              def terminate(self):
+                  return None
+          EOF
+
+      - name: Python lint
+        run: python -m pyflakes buyedektir.py && python -m py_compile buyedektir.py
+
+      - name: Backend regression suites
+        run: python -m pytest tests/ -q
+
+      - name: Smoke suite
+        run: python test_smoke.py
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install headless display + Electron system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libatk1.0-0 libatk-bridge2.0-0 \
+              libcups2 libdrm2 libgtk-3-0 libgbm1 libasound2t64 libnss3 libxss1
+
+      - name: Provide test-expected .venv python path
+        run: |
+          # test_followup_frontend.js sabit '.venv/Scripts/python.exe' cagirir
+          # (Windows venv duzeni); CI'da stdlib parser'i icin sistem python'u
+          # yeterli — blueprint'in Linux stub'inin esdegeri.
+          mkdir -p .venv/Scripts
+          ln -sf "$(which python3)" .venv/Scripts/python.exe
+
+      - name: Install locked Node dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Source safety scan
+        run: npm run scan
+
+      - name: JavaScript syntax checks
+        run: |
+          for f in scripts/*.js static/*.js test_*.js; do node --check "$f"; done
+          node scripts/check-inline-scripts.js
+
+      - name: Plain Node test files
+        run: |
+          for f in test_chat_lifecycle.js test_cockpit_behavior.js \
+              test_cockpit_frontend.js test_cockpit_request.js \
+              test_complete_frontend.js test_followup_frontend.js \
+              test_frontend_regressions.js test_game_overlay.js \
+              test_new_report_frontend.js test_third_frontend.js; do
+            echo "== $f"
+            node "$f"
+          done
+
+      - name: Electron fixture tests under xvfb
+        env:
+          # GitHub runner'da chrome-sandbox SUID izni yok; fixture testler
+          # guvenilmeyen icerik yuklemedigi icin sandbox kapatilir.
+          ELECTRON_DISABLE_SANDBOX: '1'
+        run: |
+          # Linux'ta guvenilir calisan Electron fixture seti; oyun-overlay'i ve
+          # main-process helper testleri gercek Windows pencere/davranisi
+          # gerektirdiginden CI kapsami disi (yerelde de takiliyor).
+          for f in test_capture_lifecycle.js test_cockpit_browser.js \
+              test_overlay_stale.js test_ui_language.js; do
+            echo "== $f"
+            xvfb-run -a ./node_modules/.bin/electron "$f"
+          done
