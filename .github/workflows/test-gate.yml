@@ -125,6 +125,10 @@ jobs:
           done
 
       - name: Electron fixture tests under xvfb
+        env:
+          # GitHub runner'da chrome-sandbox SUID izni yok; fixture testler
+          # guvenilmeyen icerik yuklemedigi icin sandbox kapatilir.
+          ELECTRON_DISABLE_SANDBOX: '1'
         run: |
           # Linux'ta guvenilir calisan Electron fixture seti; oyun-overlay'i ve
           # main-process helper testleri gercek Windows pencere/davranisi
