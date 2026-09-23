@@ -94,6 +94,14 @@ jobs:
           sudo apt-get install -y xvfb libatk1.0-0 libatk-bridge2.0-0 \
               libcups2 libdrm2 libgtk-3-0 libgbm1 libasound2t64 libnss3 libxss1
 
+      - name: Provide test-expected .venv python path
+        run: |
+          # test_followup_frontend.js sabit '.venv/Scripts/python.exe' cagirir
+          # (Windows venv duzeni); CI'da stdlib parser'i icin sistem python'u
+          # yeterli — blueprint'in Linux stub'inin esdegeri.
+          mkdir -p .venv/Scripts
+          ln -sf "$(which python3)" .venv/Scripts/python.exe
+
       - name: Install locked Node dependencies
         run: npm ci --no-audit --no-fund
 
