@@ -35,11 +35,15 @@ jobs:
       - name: Install test dependencies
         run: |
           # requirements.txt'nin CI-suzenlenmis hali: Windows-only pyaudiowpatch
-          # ve testlerin hic cagirmadigi agir tembel import'lar (torch,
-          # torchaudio, faster-whisper, pyannote.audio) atilir.
+          # ve hic cagirilmayan agir tembel import'lar (torchaudio,
+          # pyannote.audio) atilir. torch CPU-only index'ten, faster-whisper
+          # PyPI'dan ayrica kurulur — smoke'un transkribe/diarization alt
+          # testleri gercek modul ister (stub yetmez).
           sed -E '/^(pyaudiowpatch|torch|torchaudio|faster-whisper|pyannote\.audio)/d' \
               requirements.txt > /tmp/requirements-ci.txt
           pip install -r /tmp/requirements-ci.txt pyflakes pytest
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install faster-whisper
 
       - name: Stub pyaudiowpatch for Linux
         run: |
