@@ -2,6 +2,8 @@
 
 Güncel devir notu: [2026-09-23 17:46 — GitHub Actions gerçek test kapısı](docs/devir/2026-09-23-1746.md).
 
+Önceki devir notu: [2026-09-23 16:35 — canli QA hata paketi: çift toast + i18n dinamik buton + mic açma mesajı](docs/devir/2026-09-23-1635.md).
+
 Önceki devir notu: [2026-09-22 18:27 — bug_catcher turu: takili durum göstergeleri (cevap dock'u + capture_phase)](docs/devir/2026-09-22-1827.md).
 
 Önceki devir notu: [2026-09-22 16:12 — repo görselliği: README yenileme + gerçek ikonlar](docs/devir/2026-09-22-1612.md).
