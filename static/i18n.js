@@ -150,6 +150,7 @@
         '1–4 ile okuma modunu aç · Esc ile kapat': 'Press 1–4 for Reading mode · Esc to close',
         'Metni düzelt': 'Edit text', 'Duyulan metin': 'Recognized text', 'Kaydet': 'Save', 'Vazgeç': 'Cancel',
         'Cevap öner': 'Suggest reply', 'Çevir': 'Translate', 'Kopyala': 'Copy', 'Büyüt': 'Enlarge',
+        'Çeviriyi Kopyala': 'Copy translation', 'Cevabı Kopyala': 'Copy reply',
         'Cevaplar hazırlanıyor.': 'Preparing replies.', 'Henüz seçili bir konuşma yok.': 'No conversation selected yet.',
         'Kullanılabilir cevap alınamadı.': 'No usable reply was returned.', 'Böyle söyle': 'Say it like this',
         'Türkçe okunuş': 'Turkish pronunciation', 'Türkçe anlamı': 'Meaning in Turkish',
@@ -244,11 +245,22 @@
         return null;
     }
 
+    // '📝 Çevir' gibi emoji + metin dugme etiketleri: emoji onekini ayirip
+    // sozlukte/pattern'de yalniz cekirdek metni ara; bulunursa emoji korunarak
+    // sonuc kurulur ('📝 Translate'). Saf emoji ('🗑️') metin icermedigi icin
+    // degismez; sozlukte tam emoji'li anahtar varsa o eslesme yine ustte.
+    function translateEmojiPrefixed(trimmed) {
+        const match = trimmed.match(/^(\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*)\s*(.+)$/u);
+        if (!match) return null;
+        const core = EN[match[2]] || translatePattern(match[2]);
+        return core ? `${match[1]} ${core}` : null;
+    }
+
     function translateString(value) {
         if (currentLanguage !== 'en' || typeof value !== 'string') return value;
         const trimmed = value.trim();
         if (!trimmed) return value;
-        const translated = EN[trimmed] || translatePattern(trimmed);
+        const translated = EN[trimmed] || translatePattern(trimmed) || translateEmojiPrefixed(trimmed);
         return translated ? preserveSpacing(value, translated) : value;
     }
 

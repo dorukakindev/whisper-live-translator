@@ -2372,6 +2372,7 @@ class MicRecorder:
         self.thread.start()
         if not self._start_event.wait(timeout=5.0):
             logger.error("Mikrofon cihazı 5 saniyede açılamadı")
+            self._start_error = 'Mikrofon cihazı 5 saniyede açılamadı'
             self.is_recording = False
             return False
         return bool(self.is_recording and self.stream is not None and not self._start_error)
@@ -4136,12 +4137,16 @@ class WhisperWebTranscriber:
             logger.error(f"Ses yakalama hatasi: {e}", exc_info=True)
             # Stream henuz acilmamissa bekleyen /api/start cagrisina hata dondur;
             # acilmis (hazir) oturumda el sikismasina dokunma.
-            if handshake is not None and not handshake['event'].is_set():
+            handshake_delivered = handshake is not None and not handshake['event'].is_set()
+            if handshake_delivered:
                 handshake['error'] = f'Ses cihazı açılamadı veya okunamadı: {e}'
                 handshake['event'].set()
-            socketio.emit('error', {
-                'message': 'Ses yakalama sırasında beklenmeyen bir hata oluştu.'
-            })
+            # Hata el sikismasiyla istemciye zaten tasindiysa soket 'error'
+            # emit'i ayni basarisizligi ikinci kez duyurur (UI'da cift toast).
+            if not handshake_delivered:
+                socketio.emit('error', {
+                    'message': 'Ses yakalama sırasında beklenmeyen bir hata oluştu.'
+                })
         finally:
             if stream_registered:
                 self._close_active_audio_stream()
@@ -5162,6 +5167,12 @@ def _ptt_mic_command(data):
             raise
         if not started:
             _mic_job_slots.release()
+            # Acma hatasi mesguliyet degildir: cihaz kapaliyken 'zaten devam
+            # ediyor' demek kullaniciyi bos yere tekrar denemeye yoneltir.
+            open_error = getattr(mic_recorder, '_start_error', None)
+            if open_error:
+                return jsonify({'success': False,
+                                'error': f'Mikrofon açılamadı: {open_error}'}), 409
             return jsonify({'success': False, 'error': 'Kayit zaten devam ediyor veya onceki kayit henuz kapanmadi'})
         mic_recorder._job_slot_reserved = True
         mic_recorder.target_lang = target_lang

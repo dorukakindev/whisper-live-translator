@@ -743,6 +743,34 @@ class MicRecorderFaultTests(unittest.TestCase):
             flags['error'].is_set(),
             'mic okuma hatasi UI ya hic bildirilmedi (sessiz kayit olumu)')
 
+    # B-9: mikrofon ACMA hatasi 'zaten devam ediyor' degil gercek aygit
+    # hatasi rapor etmeli; aksi halde kullanici bos yere tekrar dener.
+    def test_mic_open_failure_reports_device_error(self):
+        class _DeadPyAudio:
+            def get_device_info_by_index(self, i):
+                return {'index': i, 'maxInputChannels': 1,
+                        'defaultSampleRate': 16000}
+            def get_default_input_device_info(self):
+                return self.get_device_info_by_index(0)
+            def get_device_count(self):
+                return 1
+            def open(self, **kw):
+                raise OSError('aygit bulunamadi')
+            def terminate(self):
+                pass
+
+        fake_module = SimpleNamespace(PyAudio=_DeadPyAudio, paInt16=8)
+        with patch.dict(sys.modules, {'pyaudiowpatch': fake_module}):
+            r = self.client.post('/api/ptt_mic', json={
+                'active': True, 'recording_id': 'rid-open',
+                'target_lang': 'ja'})
+        data = r.get_json() or {}
+        self.assertFalse(data.get('success'))
+        self.assertIn('açılamadı', str(data.get('error')),
+                      f'acma hatasi mesguliyet gibi raporlandi: {data}')
+        self.assertNotIn('devam ediyor', str(data.get('error')),
+                         f'yaniltici mesaj: {data}')
+
     # B-7: ayni kayit icin en fazla bir terminal event yayinlanir; success emit'i
     # patlarsa bile except kolu ikinci bir sonuc basmaz.
     def test_mic_result_at_most_one_terminal(self):

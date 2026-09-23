@@ -591,6 +591,30 @@ app.whenReady().then(async () => {
         && s.progressState !== 'error'
         && s.btnHidden === true, s);
 
+    // ── P10) dinamik satir butonlari dil degisiminde yeniden cevrilmeli ──
+    // Emoji'li etiketler ('📝 Çevir') sozluge emoji'siz anahtarlarla kayitli;
+    // eski cevirici yalniz tam-eslesme yaptigi icin dinamik butonlar 'en'
+    // modunda Turkce kaliyordu.
+    s = await run(`(async()=>{
+        try {
+            window.whisperI18n.setLanguage('en');
+            socket._events.new_transcription({id:92001, text:'dinamik buton satiri',
+                model_language:'JA', timestamp:'12:02:00', instance_id:'fx-1'});
+            await new Promise(r => setTimeout(r, 0));  // MutationObserver gecikmesi
+            const enAns = document.querySelector(
+                '.transcription-item[data-transcription-id="92001"] .ai-answer-btn')?.textContent.trim();
+            const enTr = document.querySelector(
+                '.transcription-item[data-transcription-id="92001"] .ai-translate-btn')?.textContent.trim();
+            window.whisperI18n.setLanguage('tr');
+            const trAns = document.querySelector(
+                '.transcription-item[data-transcription-id="92001"] .ai-answer-btn')?.textContent.trim();
+            return {enAns, enTr, trAns};
+        } catch (e) { return {err: String(e)}; }
+    })()`);
+    step('P10 dynamic row buttons translate on lang switch',
+        s.enAns === 'Suggest reply' && /Translate/.test(s.enTr || '')
+        && s.trAns === 'Cevap öner', s);
+
     await win.webContents.executeJavaScript('void 0');
     if (failures.length) {
         console.error('BASARISIZ:', failures.join(' | '));
