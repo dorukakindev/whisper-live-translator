@@ -275,14 +275,21 @@ class CaptureLifecycleBackendTests(unittest.TestCase):
         self.assertFalse(data['success'],
                          'cihaz acma hatasi basari gibi raporlandi')
         self.assertTrue(data.get('error'), 'hata mesaji bos')
-        self.assertFalse(self.t.is_running)
+        # Capture thread'in finally temizligi (is_running=False,
+        # _capture_phase='idle') el sikismasi yanitindan SONRA tamamlanir;
+        # dogrudan okumak yarisa girer, kisa poll ile beklenir.
+        self.assertTrue(_wait_for(
+            lambda: not self.t.is_running and self.t._capture_phase == 'idle',
+            timeout=3),
+            'basarisiz start sonrasi thread temizligi tamamlanmadi')
         stopped = _by_name(events, 'capture_stopped')
         self.assertEqual(len(stopped), 1)
         self.assertEqual(stopped[0].get('reason'), 'error')
         self.assertIsNotNone(stopped[0].get('session_id'))
-        # Basarisiz start'tan sonra /api/stats bayat 'listening' rapor etmemeli.
-        self.assertEqual(self.t._capture_phase, 'idle',
-                         'basarisiz start _capture_phase takili birakti')
+        # Hata el sikismasiyla HTTP yanitina tasindi; soket 'error' emit'i
+        # ayni basarisizligi ikinci kez duyururdu (UI'da cift toast).
+        self.assertEqual(_by_name(events, 'error'), [],
+                         'handshake ile tasinan hata soket uzerinden de emit edildi')
 
     # ── 3b) el sikismasi gercekten bekler: thread p.open icindeyken yanit
     #        donmemeli ────────────────────────────────────────────────────
