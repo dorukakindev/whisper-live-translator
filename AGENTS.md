@@ -10,6 +10,18 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 - Her tamamlanan düzeltme/geliştirme grubu için uygun testleri çalıştır, kod commit'i oluştur, tarihli devir ve kök indeksi güncelle, belge commit'i oluştur ve push et. Sadece plan veya “yapabilirim” yanıtında kalma. Ayrıntılı yayın sırası aşağıda ve BASLANGIC.md içindedir.
 - Format sonrası eski mutlak kullanıcı yollarını, `.venv` ortamını, oturum açmayı ve kurulu programları geçerli sayma. Gerçek makineyi incele. Önceki notlardaki sürümler çalışan bir kurulum garantisi değildir.
 
+## Windows birincil ortam (kullanıcı kuralı)
+
+Projenin asıl kullanım ortamı Windows'tur (`D:\Whisper Local`). Ubuntu'da geliştirme ve Electron testi serbest; fakat:
+
+- **Her PR'da Windows etkisi ayrıca değerlendirilir:** `install.bat` / `start.bat` akışı (repo tarafındaki karşılığı kök `başlat.bat` + `diger-baslaticilar/`), Windows yolları, PowerShell/cmd davranışı, dosya seçici (file picker), UTF-8/Türkçe karakterler ve varsa GPU/CUDA bağımlılıkları kontrol edilir.
+- Normal Windows açılışı `start.bat` (repo'da `başlat.bat`) üzerindendir; yalnız `npm start` testi bunu doğrulamaz.
+- Yalnızca değişen alanlara yönelik testler çalıştırılır; görev başına gereksiz yere tam test paketi koşulmaz. Windows CI sonucu beklenir.
+- Ubuntu Electron testi; gerçek Windows arayüzü, DPI, GPU, DRM veya kullanıcı-hesabı doğrulaması yerine geçmez. Doğrulanamayan sınırlar PR açıklamasında açıkça yazılır.
+- Güncel `master` (bu repo'da `main`) üzerinden ayrı dal + PR açılır; kendi PR'ı merge edilmez — kullanıcı inceleyip Windows makineye taşır.
+- Değişen dosyalar, test sonuçları, Windows'a özgü riskler ve doğrulanmamış sınırlar devir notuna yazılır.
+- Gerçek profil, API anahtarı ve kişisel veriler testlerde veya commit'lerde kullanılmaz.
+
 ## What this is
 
 Whisper Pro is a Windows desktop app for **live, real-time conversation across languages**. It captures system audio (or a microphone), transcribes the other party's speech with faster-whisper, and generates AI reply suggestions. The defining workflow: the user reads the **Turkish phonetic spelling** (`romanized`/`okunuş`) of a suggested reply aloud to speak back in a language they don't know (Japanese, Arabic, Chinese, Russian, Spanish, etc.). Optimize for that read-aloud use — pronunciations must be effortless to read and replies must sound natural to a native speaker.
