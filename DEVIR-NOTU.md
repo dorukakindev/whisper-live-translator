@@ -1,6 +1,8 @@
 # Devir notları
 
-Güncel devir notu: [2026-09-23 17:46 — GitHub Actions gerçek test kapısı](docs/devir/2026-09-23-1746.md).
+Güncel devir notu: [2026-09-24 03:46 — PR #10–#12 GitHub/yerel eşitlemesi ve hedefli doğrulama](docs/devir/2026-09-24-0346.md).
+
+Önceki devir notu: [2026-09-23 17:46 — GitHub Actions gerçek test kapısı](docs/devir/2026-09-23-1746.md).
 
 Önceki devir notu: [2026-09-23 17:41 — cevap-önerisi kalite/latency harness'i (stub'lı)](docs/devir/2026-09-23-1741.md).
 
