@@ -1,6 +1,8 @@
 # Devir notları
 
-Güncel devir notu: [2026-09-24 05:20 — Windows birincil ortam kuralları AGENTS.md'ye işlendi](docs/devir/2026-09-24-0520.md).
+Güncel devir notu: [2026-09-25 03:45 — A'dan Z'ye bug taraması: W-1 (çeviri anahtarı silinmesi) doğrulandı + derleme](docs/devir/2026-09-25-0345.md).
+
+Önceki devir notu: [2026-09-24 05:20 — Windows birincil ortam kuralları AGENTS.md'ye işlendi](docs/devir/2026-09-24-0520.md).
 
 Önceki devir notu: [2026-09-24 03:46 — PR #10–#12 GitHub/yerel eşitlemesi ve hedefli doğrulama](docs/devir/2026-09-24-0346.md).
 
