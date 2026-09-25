@@ -1,6 +1,7 @@
 """Ses hattını model/SciPy yüklemeden gerçek fonksiyon gövdeleriyle sınar."""
 import ast
 import logging
+import queue
 from pathlib import Path
 from collections import deque
 from types import SimpleNamespace
@@ -46,6 +47,11 @@ def capture_case(prefix, speech, vad_fails=False, reset_at=None, ptt=False):
         flush_now=False, partial_enabled=False, vad=None, capture_mode='system',
         _utterance_seq=0, silence_duration=0.09, adaptive_silence=False, MAX_UTTERANCE_S=25, MAX_PTT_S=25,
         last_emit_time=0, EMIT_INTERVAL=0.1,
+        # _capture_audio'nun dogrudan okudugu alanlar (production sözleşmesi):
+        # el sikismasiz bagimsiz cagri icin None, sinyal olcumleri icin girdi alanlari,
+        # heartbeat satirindaki audio_queue.qsize() icin bos kuyruk.
+        _capture_handshake=None, _signal_snapshot=None, _capture_phase='idle',
+        audio_queue=queue.Queue(),
         _resolve_capture_device=lambda p, d: (0, {'maxInputChannels':1, 'defaultSampleRate':16000, 'name':'Test'}),
         _close_active_audio_stream=lambda: None,
         _enqueue_audio=lambda data, *args: captured.append(data.copy()))

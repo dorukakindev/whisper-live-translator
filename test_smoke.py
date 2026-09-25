@@ -1656,7 +1656,10 @@ def test_verified_report_regressions():
 
     old_translation = transcriber.translator.snapshot_request()
     with responder._config_lock:
-        old_key = responder.translation_api_keys.get('anthropic')
+        old_keys = dict(responder.translation_api_keys)
+        old_resp_provider = responder.translation_provider
+        old_resp_key = responder.translation_api_key
+        old_resp_url = responder.translation_base_url
         responder.translation_api_keys['anthropic'] = 'keep-me'
     try:
         invalid = client.post('/api/translation_settings', json={
@@ -1671,17 +1674,60 @@ def test_verified_report_regressions():
         check(valid.status_code == 200, 'gecerli ceviri ayari reddedildi')
         check(responder.translation_api_keys['anthropic'] == 'keep-me',
               'apiKey alani olmayan ayar mevcut Claude anahtarini sildi')
-        key_status = client.get('/api/status').get_json()['translation_key_available']
-        check(key_status.get('anthropic') is True,
+        # W-1: frontend nesnesi 'apiKey' alanini her kayitta tasir ('' olabilir);
+        # bos deger kayitli anahtari silmemeli, dolu deger uygulanmali.
+        client.post('/api/translation_settings', json={
+            'provider': 'anthropic', 'enabled': True,
+            'sourceLang': 'TR', 'targetLang': 'JA', 'apiKey': ''
+        })
+        check(responder.translation_api_keys['anthropic'] == 'keep-me',
+              'bos apiKey kayitli Claude ceviri anahtarini sildi (W-1)')
+        client.post('/api/translation_settings', json={
+            'provider': 'anthropic', 'enabled': True,
+            'sourceLang': 'TR', 'targetLang': 'JA', 'apiKey': 'new-key'
+        })
+        check(responder.translation_api_keys['anthropic'] == 'new-key',
+              'dolu apiKey Claude ceviri anahtarina uygulanmadi')
+        with responder._config_lock:
+            responder.translation_api_keys['anthropic'] = 'keep-me'
+        with transcriber.translator._config_lock:
+            transcriber.translator.api_key = 'deepl-keep'
+        client.post('/api/translation_settings', json={
+            'provider': 'deepl', 'enabled': True,
+            'sourceLang': 'TR', 'targetLang': 'EN', 'apiKey': ''
+        })
+        check(transcriber.translator.api_key == 'deepl-keep',
+              'bos apiKey kayitli DeepL anahtarini sildi (W-1)')
+        # W-1 kardes yuzeyi: /api/deepl_config 'api_key' alani yoksa anahtara
+        # dokunmaz; bos alan bilincli silme olarak uygulanmaya devam eder.
+        with responder._config_lock:
+            responder.translation_api_keys['openai_reseller'] = 'reseller-keep'
+        client.post('/api/deepl_config', json={'provider': 'openai_reseller'})
+        check(responder.translation_api_keys['openai_reseller'] == 'reseller-keep',
+              'api_key alani olmayan deepl_config reseller anahtarini sildi')
+        client.post('/api/deepl_config', json={
+            'provider': 'openai_reseller', 'api_key': ''
+        })
+        check(responder.translation_api_keys['openai_reseller'] is None,
+              'bos api_key acik silme olarak uygulanmadi')
+        status_payload = client.get('/api/status').get_json()
+        check(status_payload['translation_key_available'].get('anthropic') is True,
               'backend ceviri anahtari varligi UI durumuna tasinmadi')
+        check('session_id' in status_payload,
+              '/api/status session_id alanini dusurdu (W-5)')
     finally:
         with transcriber.translator._config_lock:
             transcriber.translator.enabled = old_translation['enabled']
             transcriber.translator.provider = old_translation['provider']
             transcriber.translator.source_lang = old_translation['source_lang']
             transcriber.translator.target_lang = old_translation['target_lang']
+            transcriber.translator.api_key = old_translation['deepl_api_key']
         with responder._config_lock:
-            responder.translation_api_keys['anthropic'] = old_key
+            responder.translation_api_keys.clear()
+            responder.translation_api_keys.update(old_keys)
+            responder.translation_provider = old_resp_provider
+            responder.translation_api_key = old_resp_key
+            responder.translation_base_url = old_resp_url
 
     bad_text = client.post('/api/generate_ai_response', json={
         'text': 123, 'mode': 'answer', 'target_lang': 'ja'})

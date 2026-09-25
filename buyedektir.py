@@ -4920,8 +4920,14 @@ def deepl_config():
             return jsonify({'success': False, 'error': 'API key gerekli veya geçersiz'})
 
     with transcriber.translator._config_lock:
+        # 'api_key' alani hic gonderilmediyse kayitli anahtara dokunma: alan
+        # yoklugu ile bilincli temizleme (bos string/None) ayrilmali; aksi halde
+        # yalniz saglayici secimi yapan bir cagri anahtari silerdi
+        # (translation_settings'teki W-1'in kardes yuzeyi).
+        key_field_present = 'api_key' in data
         if provider in {'anthropic', 'openai_reseller', 'openai_official'}:
-            transcriber.openai_responder.configure_translation(provider, api_key)
+            if key_field_present:
+                transcriber.openai_responder.configure_translation(provider, api_key)
             transcriber.translator.provider = provider
             if api_key:
                 success = bool(
@@ -4931,6 +4937,8 @@ def deepl_config():
                     transcriber.openai_responder.enabled = True
             else:
                 success = False
+        elif not key_field_present:
+            success = False
         elif api_key:
             transcriber.translator.api_key = str(api_key).strip() or None
             transcriber.translator.provider = provider
@@ -4981,15 +4989,20 @@ def translation_settings():
         transcriber.translator.source_lang = source_lang.upper()
         transcriber.translator.target_lang = target_lang.upper()
 
+        # apiKey yalnizca DOLU bir stringken uygulanir: frontend ayar kaydinda
+        # 'apiKey' alanini her zaman tasir (anahtar localStorage'da yoksa ''),
+        # bos degerin kayitli anahtari silmesi W-1 bug'iydi. Bilincli anahtar
+        # silme /api/deepl_config uzerinden yapilir (orada bos alan = acik silme).
+        api_key = data.get('apiKey')
+        has_new_key = isinstance(api_key, str) and bool(api_key.strip())
         if provider in {'anthropic', 'openai_reseller', 'openai_official'}:
-            if 'apiKey' in data:
-                transcriber.openai_responder.configure_translation(provider, data.get('apiKey'))
-            if data.get('apiKey'):
+            if has_new_key:
+                transcriber.openai_responder.configure_translation(provider, api_key)
                 transcriber.openai_responder.enabled = True
-        elif 'apiKey' in data:
+        elif has_new_key:
             # Ayar/toggle degisiminde DeepL "Test" cagrisi yapma. Anahtar kaydetme
             # endpoint'i zaten bir kez dogrular; burada yalnız runtime state eslenir.
-            transcriber.translator.api_key = str(data.get('apiKey') or '').strip() or None
+            transcriber.translator.api_key = api_key.strip()
     
     return jsonify({'success': True})
 
@@ -5514,6 +5527,10 @@ def get_status():
         'translation_enabled': translation_state['enabled'],
         'translation_key_available': translation_key_available,
         'total_transcriptions': state['total_transcriptions'],
+        # Sayfa yenilemesi sonrasi resync'in aktif oturumu evlat edinebilmesi
+        # icin session_id disari verilir (snapshot zaten uretiyordu; route
+        # dusturuyordu — index.html resyncAfterReconnect bu alana bakar).
+        'session_id': state['session_id'],
         'instance_id': INSTANCE_ID,
     })
 
