@@ -1,6 +1,8 @@
 # Devir notları
 
-Güncel devir notu: [2026-09-25 23:59 — ikinci A→Z tarama: W-5 (`/api/status` session_id) + W-6 (sessizlik kontratı) doğrulandı](docs/devir/2026-09-25-2359.md).
+Güncel devir notu: [2026-09-25 21:07 — GitHub depo araştırması: geliştirme/özellik fırsatları raporu](docs/devir/2026-09-25-2107.md).
+
+Önceki devir notu: [2026-09-25 23:59 — ikinci A→Z tarama: W-5 (`/api/status` session_id) + W-6 (sessizlik kontratı) doğrulandı](docs/devir/2026-09-25-2359.md).
 
 Önceki devir notu: [2026-09-25 03:45 — A'dan Z'ye bug taraması: W-1 (çeviri anahtarı silinmesi) doğrulandı + derleme](docs/devir/2026-09-25-0345.md).
 
