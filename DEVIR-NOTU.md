@@ -1,6 +1,8 @@
 # Devir notları
 
-Güncel devir notu: [2026-09-25 03:45 — A'dan Z'ye bug taraması: W-1 (çeviri anahtarı silinmesi) doğrulandı + derleme](docs/devir/2026-09-25-0345.md).
+Güncel devir notu: [2026-09-25 23:59 — ikinci A→Z tarama: W-5 (`/api/status` session_id) + W-6 (sessizlik kontratı) doğrulandı](docs/devir/2026-09-25-2359.md).
+
+Önceki devir notu: [2026-09-25 03:45 — A'dan Z'ye bug taraması: W-1 (çeviri anahtarı silinmesi) doğrulandı + derleme](docs/devir/2026-09-25-0345.md).
 
 Önceki devir notu: [2026-09-24 05:20 — Windows birincil ortam kuralları AGENTS.md'ye işlendi](docs/devir/2026-09-24-0520.md).
 
