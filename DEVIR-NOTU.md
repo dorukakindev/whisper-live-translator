@@ -1,6 +1,8 @@
 # Devir notları
 
-Güncel devir notu: [2026-09-26 00:58 — tüm bug raporlarının HEAD doğrulaması: GERÇEK/FALSE-POSITIVE/DÜZELDİ işaretli konsolide rapor](docs/devir/2026-09-26-0058.md).
+Güncel devir notu: [2026-09-26 04:33 — doğrulanmış artık bug grubu: capture watchdog (B-BE-011) + sürekli resampler (B-BE-009) + stop/drain dayanıklılığı + kozmetikler](docs/devir/2026-09-26-0433.md).
+
+Önceki devir notu: [2026-09-26 00:58 — tüm bug raporlarının HEAD doğrulaması: GERÇEK/FALSE-POSITIVE/DÜZELDİ işaretli konsolide rapor](docs/devir/2026-09-26-0058.md).
 
 Önceki devir notu: [2026-09-26 00:54 — W-1/W-5/W-6/W-4 düzeltmeleri (çeviri anahtarı silinmesi, session_id, sessizlik slider'ı, test fixture)](docs/devir/2026-09-26-0054.md).
 

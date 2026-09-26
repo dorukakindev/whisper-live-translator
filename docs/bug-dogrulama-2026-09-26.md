@@ -28,7 +28,7 @@
 | A-1..5, B-1..7, C-1..6, D-1..2 | 20 | 17 | 0 | 3 (A-1, A-2 artık, B-*) | 0 |
 | P1..P13 | 13 | 13 (bug yok / invariant test) | 0 | 0 | 0 |
 
-**Şu an açık kalan anlamlı bulgular:** B-BE-011 (`stream.read` takılması — kasıtlı sınır), B-BE-009 (chunk resampling tıkırtı), A-1 artığı (>10 sn birikimde son segment), B-FR-005 artığı (başarısız stop'ta UI normalize), B-FR-006/011 artıkları (birkaç fire-and-forget fetch), BUG-01 (teorik), kozmetik/ölü-bayraklar (N-14, `enabled`, M07, M11, M18, M20, M33). **W-1, W-5, W-6, W-4, `deepl_config` bu oturumda `c03d1ed` ile düzeltildi.**
+**Şu an açık kalan anlamlı bulgular:** ~~B-BE-011~~, ~~B-BE-009~~, ~~A-1 artığı~~, ~~B-FR-005 artığı~~, ~~B-FR-006/011 artıkları~~ → hepsi `f345e3e` ile düzeltildi. Kalan: BUG-01 (teorik), `enabled` ölü bayrağı, M33 (yerel-disk artığı — repo'ya girmiyor, aşağıda yeniden sınıflandı). **W-1, W-5, W-6, W-4, `deepl_config` `c03d1ed` ile; B-BE-011, B-BE-009, A-1, B-FR-005, B-BE-015, B-FR-006/011, N-14, M07, M11, M18, M20 `f345e3e` ile düzeltildi.**
 
 ---
 
@@ -41,8 +41,8 @@
 | **W-4** `test_live_audio.py` bayat | **GERÇEK (test borcu) → DÜZELDİ (`c03d1ed`)** | `SimpleNamespace` fixture'ı `_capture_handshake` (`buyedektir.py:3783`) ve diğer yeni capture-sözleşmesi alanlarını taşımıyordu → `AttributeError`. Ürün bug'ı değildi (üretim kodu sağlamdı). **Fix:** fixture hizalandı, test geçiyor. |
 | **W-5** `/api/status` `session_id` düşürüyor | **GERÇEK → DÜZELDİ (`c03d1ed`)** | Snapshot `session_id` üretir ama route kopyalamıyordu → `resyncAfterReconnect`'in `st.session_id` okuması hep `undefined`, `capture_stopped` guard'ı `_captureSessionId==null` iken hiç reddedemiyordu. **Fix:** `/api/status` yanıtına `'session_id': state['session_id']` eklendi (~5530). |
 | **W-6** sessizlik slider ↔ etkin değer ayrışması | **GERÇEK → DÜZELDİ (`c03d1ed`)** | Slider `0.2–5.0` idi; adaptif zarf `[0.65,2.0]`, oyun profili `0.9` sabit → aralığın ~%60'ı davranışsız, UI etkin değeri göstermiyordu. **Fix:** slider `min=0.65 max=2` + açıklama metni; oyun modu + sistem sesinde slider disable + ipucu. |
-| **A-1** stop'ta son segment kaybı | **GERÇEK — büyük ölçüde düzeldi, artık var** | `stopCapture` önce `/api/flush` + 10 sn `/api/stats` drain bekler (index.html:4018-4026). Artık: 10 sn'yi aşan birikimde son segment yine düşer (`stop_capture` 3683-3705 + emit guard 4341-4353). Sınırlı senaryo. |
-| **N-14 artığı** sağlayıcı-adı log etiketi | **GERÇEK — kozmetik** | `_translate_with_openai` boş-sonuç logu anthropic için de "OpenAI çeviri" der (2084). İşlevsel değil. |
+| **A-1** stop'ta son segment kaybı | **GERÇEK → DÜZELDİ (`f345e3e`)** | `stopCapture` önce `/api/flush` + 10 sn `/api/stats` drain bekler. Artık `drained` bayrağı izleniyor: pencere dolmadan `asr_active`+kuyruk boşalmazsa `/api/stop` yine gönderilir ama kullanıcıya "Son konuşma işlenemeden durduruldu" uyarısı gösterilir — kayıp artık sessiz değil. |
+| **N-14 artığı** sağlayıcı-adı log etiketi | **GERÇEK → DÜZELDİ (`f345e3e`)** | Log artık `f"{provider or 'AI'} çeviri sonucu boş döndü"` — anthropic/deepl için de doğru etiket. |
 | **A-2 artığı** 8.3 kısa-yol | **GERÇEK — yalnız teorik** | `--whisper-electron-child` işareti zorunlu; child mutlak yolla spawn edilir → pratik senaryo yok. |
 | **`openai_responder.enabled`** | **FALSE-POSITIVE (ölü bayrak)** | Yazılıyor (4988) ama gate olarak okunmuyor — gerçek kapı anahtar varlığı. Davranış etkisi yok; kaldırılabilir/belgelenebilir. |
 
@@ -97,7 +97,7 @@
 | B-FR-002 `socket.off` yok, listener birikimi | ✅ DÜZELDİ | `socket._whisperListenersBound` singleton (3488-3489) |
 | B-FR-003 `saveHFToken` `.catch` yok | ✅ DÜZELDİ | `.catch(error => … 'Bağlantı hatası')` (2897+) |
 | B-FR-004 `startCapture` retry × `stopCapture` yarışı | ✅ DÜZELDİ | `cancelCaptureStartRetries()` + `_captureStartGeneration` stale-guard (3914-3917, 3992-3996, 4013) |
-| B-FR-005 `stopCapture` `success:false` ele alınmıyor | 🟡 KISMEN | `else { showAlert(data.error…) }` eklendi (4044) ama başarısız stop'ta `isCapturing`/`startBtn.disabled` normalize edilmiyor → yumuşak kilit kalabilir |
+| B-FR-005 `stopCapture` `success:false` ele alınmıyor | ✅ DÜZELDİ (`f345e3e`) | Başarısız stop'ta `startBtn`+`stopBtn` yeniden açık bırakılıyor: kullanıcı stop'u tekrar deneyebilir veya doğrudan yeniden başlatabilir (backend transient-busy retry yolunu kullanır); `isCapturing` gerçek durumu yansıtmaya devam eder |
 | B-BE-001 `conversation_turns` locksuz | ✅ DÜZELDİ | Tüm mutasyonlar `_lifecycle_lock` (bkz. BUG-24) |
 | B-BE-002 `transcriptions` deque yarışı | ✅ DÜZELDİ | `get_transcriptions_snapshot` kilitli (2888); append/commit `_lifecycle_lock` altında; translate kopyası `list()` + kilit (4724) |
 | B-BE-003 `speaker_names` dict yarışı | ✅ DÜZELDİ | `_profile_lock` (2313, 2322) + `_profile_write_lock` |
@@ -116,20 +116,20 @@
 |---|---|---|
 | B-BE-007 `MicRecorder.frames` locksuz | ✅ DÜZELDİ | `_frames_lock` (2336; 2364/2444/2503/2516) |
 | B-BE-008 "Input overflowed" chunk kaybı | 🟡 KISMEN | `exception_on_overflow=False` artı `consecutive_errors` + `audio_diagnostic` + kullanıcı `error` emit'i (4103-4127). Artık: nadir non-overflow istisnada tek `read` yine düşer — sınırlı. |
-| B-BE-009 chunk-bazlı resampling tıkırtı | 🔴 GERÇEK — açık (düşük-orta) | Hâlâ her ~30 ms chunk'a bağımsız FIR (`_resample_int16` @ 3911). FIR önbelleklendi (performans) ama sınır transient'ları duruyor; overlap-add veya tampon-resample gerekir. ASR toleransı yüksek; işitilebilir etki hafif. |
+| B-BE-009 chunk-bazlı resampling tıkırtı | ✅ DÜZELDİ (`f345e3e`) | `StreamResampler` overlap-save sürekli akış: her çağrı `down`'un katı kadar giriş taahhüt eder, pencere iki taraflı carry bağlamıyla resample edilir → **one-shot `_resample_int16` ile bit-birebir aynı çıktı** (maxdiff=0, tüm oranlarda; eski şemada max≈7000 + oran kayması). Okuma hatasında `reset()` bayat kuyruğu temizler. Regresyon: `test_stream_resampler_continuity`. |
 | B-BE-010 `_model_lock` crash→deadlock | ⚪ FALSE-POSITIVE | Tüm edinimler `with` veya `try/finally release` (4585, 4624); Python istisnası kilidi bırakır, native çöküşte zaten süreç ölür (kilit anlamsız). |
-| B-BE-011 `stream.read()` süresiz blokaj | 🔴 GERÇEK — açık (kasıtlı sınır) | Hâlâ timeout yok; tasarım notu: "takılan sürücüde yeni start `is_alive` ile reddedilir" (3696-3698). USB/BT kopuşunda thread askıda kalabilir → yeni başlatmalar "hala kapanıyor" döner. Yumuşatma var ama kök senaryo açık. |
+| B-BE-011 `stream.read()` süresiz blokaj | ✅ DÜZELDİ (`f345e3e`) | `_capture_watchdog` (oturum başına 1 thread): `CAPTURE_STALL_S`=8 sn başarılı okuma yoksa `_capture_stalled=True` + `is_running=False` + UI'ya `audio_diagnostic`/`error`/`capture_stopped(reason=stalled)` yayılır. `start_capture` stalled oturumda bloke `is_alive` thread'e rağmen ilerler; `_close_active_audio_stream(expected_stream)` sahiplik eşleşmesiyle eski thread yeni akışa dokunamaz — kendi akışını kendi kapatır. Regresyon: `test_blocked_read_watchdog_marks_stalled`, `test_stalled_session_new_start_keeps_new_stream`. Windows WASAPI takılması cihazda doğrulanmalı. |
 | B-BE-012 `speaker_profiles.json` eşzamanlı yazma | ✅ DÜZELDİ | `_profile_write_lock` + tmp + `os.replace` + fsync (2214-2231) |
 | B-BE-013 `_append_transcript` rotation race | ✅ DÜZELDİ | `_transcript_file_lock` kritik bölgeyi sarar (242, 249); Windows yedekli fallback (257-264) |
 | B-BE-014 `capture_stopped` eski session'dan | ✅ DÜZELDİ | Backend `_session_id==session_id` guard'ı + `session_id`/`reason` payload (4163-4180); frontend de `data.session_id` karşılaştırır (3548-3550) |
-| B-BE-015 `socketio.emit` cleanup yollarında try/catch | 🟡 KISMEN | Kritik emit'ler sarılı (4230-4233, 4525-4529); `capture_stopped` emit'i (4176) hâlâ korumasız — threading modda emit pratikte fırlatmaz, artık risk düşük. |
+| B-BE-015 `socketio.emit` cleanup yollarında try/catch | ✅ DÜZELDİ (`f345e3e`) | `finally`'deki `capture_stopped` emit'i ve watchdog bildirim emit'leri try/except ile sarıldı — emit hatası artık kaynak temizliğini engelleyemez |
 | B-BE-016 4 paylaşılan yapı locksuz | ✅ DÜZELDİ | `_lifecycle_lock` + `_profile_lock` + `_frames_lock` + `_transcript_file_lock` hepsini kapsıyor |
-| B-FR-006 10+ fetch `.catch` yok | 🟡 KISMEN | Çoğu kazandı; artık birkaç fire-and-forget kaldı (örn. `updateSpeakerName` 3037 — ağ hatası sessiz). |
+| B-FR-006 10+ fetch `.catch` yok | ✅ DÜZELDİ (`f345e3e`) | `updateSpeakerName`'e `response.ok` + `success` denetimi + `.catch` eklendi; tarama sonucu başka hatasız-fetch kalmadı |
 | B-FR-007 5 ayrı keydown listener | ✅ DÜZELDİ | 2'ye indi (5274, 5427); script tek parse → birikim yolu yok. |
 | B-FR-008 `updateTranslationStatus` timer | ✅ DÜZELDİ | `_translationStatusTimer` + `clearTimeout` (3277-3283) |
 | B-FR-009 `\n` Notepad | ✅ DÜZELDİ | `const NL = '\r\n'` (4560) |
 | B-FR-010 `changeAIModel`/`…TranslationModel` sessiz | ✅ DÜZELDİ | `else showAlert` + `.catch` ikisinde de (4846-4852, 4886-4892) |
-| B-FR-011 `response.ok` kontrolsüz `.json()` | 🟡 KISMEN | `ptt_mic` `!response.ok` denetliyor (5355); birkaç nokta hâlâ kontrolsüz. |
+| B-FR-011 `response.ok` kontrolsüz `.json()` | ✅ DÜZELDİ (`f345e3e`) | `updateSpeakerName` zinciri artık `!r.ok → throw → .catch`; kalan çağrılar ya `await`+try/catch ya `.catch`'li |
 | B-TST-001 `test_resample_clip` vacuous | ✅ DÜZELDİ | Ön-koşul `np.max(np.abs(fl)) > 32767` (992) |
 | B-TST-002 `test_answer_contract` dedup yüzeysel | ✅ DÜZELDİ | Set-eşitlik + tekil-sayı + barrier/thread-id paralellik (176-187) |
 | B-TST-003 `transkribe.py` handle sızıntısı | ✅ DÜZELDİ | `ExitStack.enter_context(open(...))` (531-535) |
@@ -157,13 +157,15 @@
 - M25 electron-store v8 → false-positive (B-INF-003 ile aynı).
 - M27/M28 dead-code/CSS — yüzeysel temizlik büyük ölçüde yapıldı.
 
+**Düzeltilenler (`f345e3e`):**
+- ~~M07~~ `dotenv` ImportError → artık `_DOTENV_MISSING` bayrağıyla logger hazır olunca `warning` yazılıyor. ✅
+- ~~M11~~ pyannote VRAM → `diarizer.release()` eklendi (pipeline=None + `torch.cuda.empty_cache()`); `speaker_settings` kapatma yolunda çağrılır; `identify_speaker` pipeline'ı yerel referansla çağırır (release yarışı güvenli). ✅
+- ~~M18~~ `innerHTML +=` → `insertAdjacentHTML('beforeend', …)` — alt-ağaç/listener'lar korunur. ✅
+- ~~M20~~ `flushNow` timer → `_flushBtnTimer` id'si tutulup `endCaptureSession`'da iptal ediliyor. ✅
+
 **Hâlâ açık / doğrulanan gerçekler:**
-- M07 `dotenv` ImportError sessiz → hâlâ `except ImportError: pass` (30-31); `WHISPER_SKIP_DOTENV` eklendi ama yoklukta log yok. (düşük)
 - M09 FIR 192kHz ~30MB → üst sınır yok; ama `limit_denominator(2000)` patolojik oranı sınırlar. (düşük)
-- M11 pyannote GPU bellek `del pipeline`/`empty_cache` yok → diarizer kapatınca VRAM tutulur. (düşük, tek-session)
-- M18 `innerHTML +=` → `item.innerHTML += aiButtonHTML` (4465) duruyor; her eklemede alt-ağaç yeniden ayrışır. (düşük)
-- M20 `flushNow` timer birikimi → `setTimeout` id saklanmıyor; zararsız, idempotent. (önemsiz)
-- M33 `archive/__pycache__yedek/` → hâlâ 8 dosya ~847KB repo şişkinliği. (önemsiz)
+- M33 `archive/__pycache__yedek/` → **yeniden sınıflandı: FALSE-POSITIVE (repo açısından)** — dizin tracked değil ve `.gitignore` kapsamında (`git check-ignore` doğrulandı); yalnız yerel disk artığı, commit'e girmiyor. (önemsiz)
 - M29-M32 `archive/` içi bug'lar → kod ölü; ürün etkisi yok.
 
 **Doğrulanamadı / belirsiz:**
@@ -201,18 +203,18 @@ Bu seriler `docs/bug-raporu-2026-09-25.md` §3'te HEAD'de tek tek doğrulanmış
 
 | # | Bulgu | Kaynak | Önem | Not |
 |---|---|---|---|---|
-| 1 | `stream.read()` cihaz kopuşunda süresiz blokaj | B-BE-011 | 🟠 | Kasıtlı sınır; `is_alive` yeni start'ı reddeder. Watchdog/thread-terminate yok. |
-| 2 | Chunk-bazlı resampling sınır artefaktı | B-BE-009 | 🟡 | ~30 ms başına FIR transient; ASR toleranslı ama işitilebilir. |
-| 3 | Stop >10 sn birikimde son segmenti düşürür | A-1 artığı | 🟡 | Drain penceresi var; aşılınca kayıp sessiz. |
-| 4 | `stopCapture` `success:false`'ta UI normalize edilmiyor | B-FR-005 | 🟡 | Hata gösteriliyor ama `isCapturing`/buton durumu stale kalabilir. |
-| 5 | `emit` korumasız `capture_stopped` yolu | B-BE-015 | 🟢 | Threading modda pratik risk düşük. |
-| 6 | fire-and-forget fetch'ler (`update_speaker_name` vb.) | B-FR-006/011 | 🟢 | Ağ hatası sessiz. |
-| 7 | Kozmetik/ölü-bayraklar | N-14, `enabled`, M07, M11, M18, M20, M33 | ⚪ | Log etiketi, salt-yazılır bayrak, sessiz import, VRAM tutulumu, `innerHTML+=`, biriken timer, arşiv şişkinliği. |
+| 1 | `stream.read()` cihaz kopuşunda süresiz blokaj | B-BE-011 | ~~🟠~~ ✅ | `f345e3e` — `_capture_watchdog` + `CAPTURE_STALL_S` + sahiplik-eşleşmeli stream kapatma. |
+| 2 | Chunk-bazlı resampling sınır artefaktı | B-BE-009 | ~~🟡~~ ✅ | `f345e3e` — `StreamResampler` overlap-save; one-shot ile bit-birebir. |
+| 3 | Stop >10 sn birikimde son segmenti düşürür | A-1 artığı | ~~🟡~~ ✅ | `f345e3e` — drain bayrağı; aşımda kullanıcıya uyarı. |
+| 4 | `stopCapture` `success:false`'ta UI normalize edilmiyor | B-FR-005 | ~~🟡~~ ✅ | `f345e3e` — butonlar yeniden açık bırakılır. |
+| 5 | `emit` korumasız `capture_stopped` yolu | B-BE-015 | ~~🟢~~ ✅ | `f345e3e` — finally/watchdog emit'leri sarıldı. |
+| 6 | fire-and-forget fetch'ler (`update_speaker_name` vb.) | B-FR-006/011 | ~~🟢~~ ✅ | `f345e3e` — `response.ok`+`.catch`; taramada başka kalmadı. |
+| 7 | Kozmetik/ölü-bayraklar | N-14, `enabled`, M07, M11, M18, M20, M33 | ⚪ | N-14/M07/M11/M18/M20 `f345e3e`'de; M33 repo-dışı (false-positive); `enabled` ölü bayrak duruyor (davranış etkisiz). |
 | 8 | Uzun-thread mid-loop `_running` kontrolü | BUG-01 | ⚪ teorik | Session-guard'lar telafi ediyor. |
 
-**Bu oturumda düzeltilerek kapananlar:** W-1 + `deepl_config` kardeş yüzeyi, W-4, W-5, W-6 → `c03d1ed` (regresyon testleri `test_smoke.py`'de, `TUM TESTLER GECTI`).
+**Bu oturumda düzeltilerek kapananlar:** W-1 + `deepl_config` kardeş yüzeyi, W-4, W-5, W-6 → `c03d1ed`; B-BE-011, B-BE-009, A-1, B-FR-005, B-BE-015, B-FR-006/011, N-14, M07, M11, M18, M20 → `f345e3e` (regresyon testleri `test_smoke.py` + `tests/test_capture_lifecycle.py`'de, `TUM TESTLER GECTI`).
 
-**False-positive olarak kapananlar:** BUG-04, BUG-07, BUG-08, BUG-09, BUG-12, BUG-29; B-INF-003, B-INF-005, B-BE-010; `enabled` bayrağı.
+**False-positive olarak kapananlar:** BUG-04, BUG-07, BUG-08, BUG-09, BUG-12, BUG-29; B-INF-003, B-INF-005, B-BE-010; `enabled` bayrağı; M33 (repo-dışı disk artığı).
 
 ---
 
