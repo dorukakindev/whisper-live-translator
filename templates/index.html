@@ -2634,6 +2634,7 @@
         let timerInterval = null;
         let _captureStartGeneration = 0;
         let _captureRetryTimer = null;
+        let _flushBtnTimer = null;
         // Bu sayfanin BASLATTIGI yakalama oturumunun backend session_id'si.
         // capture_started/capture_stopped bunu tasiyinca eski oturumun gecikmis
         // olayi yeni oturuma uygulanamaz; eski payload'da alan yoksa uygulanir.
@@ -3072,7 +3073,14 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ speaker_id: speakerId, name: newName })
-                });
+                }).then(r => {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                }).then(data => {
+                    if (!data || !data.success) {
+                        showAlert('Konuşmacı adı kaydedilemedi', 'error');
+                    }
+                }).catch(() => showAlert('Bağlantı hatası: konuşmacı adı kaydedilemedi', 'error'));
             }
         }
 
@@ -3935,6 +3943,10 @@
             if (pBtn) { pBtn.disabled = true; renderPauseButton(pBtn, false); }
             const fBtn = document.getElementById('flushBtn');
             if (fBtn) fBtn.disabled = true;
+            // flushNow'un bekleyen 400 ms'lik timer'i stop sonrasi butonu
+            // yeniden acmasin diye iptal edilir (M20).
+            clearTimeout(_flushBtnTimer);
+            _flushBtnTimer = null;
             if (statusText) updateStatus('inactive', statusText);
             else if (typeof updateCockpitStatus === 'function') updateCockpitStatus();
             if (alertOpts && (wasActive || alertOpts.always)) {
@@ -4053,11 +4065,15 @@
                 // tamamlanmış cümle sessizce düşebilirdi.
                 await fetch('/api/flush', { method: 'POST' }).catch(() => null);
                 const drainDeadline = Date.now() + 10000;
+                let drained = false;
                 await new Promise(resolve => setTimeout(resolve, 180));
                 while (Date.now() < drainDeadline) {
                     const stats = await fetch('/api/stats').then(r => r.json()).catch(() => null);
                     if (stats && !stats.pipeline?.asr_active
-                            && Number(stats.performance?.audio_queue_size || 0) === 0) break;
+                            && Number(stats.performance?.audio_queue_size || 0) === 0) {
+                        drained = true;
+                        break;
+                    }
                     await new Promise(resolve => setTimeout(resolve, 120));
                 }
                 const response = await fetch('/api/stop', {
@@ -4071,8 +4087,21 @@
                     // gelirse de durum tek noktadan normalize edilir.
                     endCaptureSession('Durduruldu',
                         {text: 'Ses yakalama durduruldu', type: 'info'});
+                    // 10 sn'yi asan birikimde kuyruktaki son segment islenemeden
+                    // duser; kayip sessiz kalmasin (A-1 artigi).
+                    if (!drained) {
+                        showAlert('⚠️ Son konuşma işlenemeden durduruldu (kuyruk doluydu)', 'warning');
+                    }
                 } else {
                     showAlert(data.error || 'Ses yakalama durdurulamadı', 'error');
+                    // Basarisiz stop sonrasi kilitli kalma: iki butonu da acik
+                    // birak ki kullanici stop'u yeniden deneyebilsin veya
+                    // dogrudan yeniden baslatabilsin (backend zaten calisiyorsa
+                    // transient-busy retry yolunu kullanir).
+                    const startBtnEl = document.getElementById('startBtn');
+                    if (startBtnEl) startBtnEl.disabled = false;
+                    const stopBtnEl = document.getElementById('stopBtn');
+                    if (stopBtnEl) stopBtnEl.disabled = false;
                 }
             } catch (error) {
                 showAlert(`Hata: ${error.message}`, 'error');
@@ -4098,9 +4127,12 @@
             } catch (error) {
                 showAlert(`Hata: ${error.message}`, 'error');
             } finally {
-                // Yakalama hâlâ açıksa butonu kısa süre sonra tekrar aktif et
+                // Yakalama hâlâ açıksa butonu kısa süre sonra tekrar aktif et.
+                // Timer kimligi tutulur; stop/clear sirasinda iptal edilir.
                 if (btn && isCapturing && !isPaused) {
-                    setTimeout(() => {
+                    clearTimeout(_flushBtnTimer);
+                    _flushBtnTimer = setTimeout(() => {
+                        _flushBtnTimer = null;
                         btn.disabled = !isCapturing || isPaused;
                     }, 400);
                 }
@@ -4462,7 +4494,9 @@
             </div>
             <div id="ai-result-${data.id}" style="display: none;"></div>
             `;
-            item.innerHTML += aiButtonHTML;
+            // innerHTML += yerine: alt-agaci her seferinde bastan ayristirip
+            // mevcut dugumlari (dinleyiciler dahil) yok etmez.
+            item.insertAdjacentHTML('beforeend', aiButtonHTML);
 
             // NOT: burada AYRICA bir OpenAI cevirisi TETIKLENMEZ. Backend zaten
             // ayni transkript icin _translate_async ile ceviriyor ve sonucu

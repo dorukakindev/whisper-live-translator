@@ -4,17 +4,24 @@ import logging
 import queue
 from pathlib import Path
 from collections import deque
+from fractions import Fraction
+from functools import lru_cache
 from types import SimpleNamespace
 import threading
 import time
 import re
 import numpy as np
+from scipy import signal
 from audio_diagnostics import analyze_pcm16, adaptive_silence_seconds
 
 
 tree = ast.parse(Path('buyedektir.py').read_text(encoding='utf-8'))
 join_node = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
                  and n.name == '_join_transcription_segments')
+resample_nodes = [n for n in tree.body
+                  if isinstance(n, (ast.FunctionDef, ast.ClassDef))
+                  and n.name in ('_resample_filter', '_resample_ratio',
+                                 '_resample_int16', 'StreamResampler')]
 klass = next(n for n in tree.body if isinstance(n, ast.ClassDef)
              and n.name == 'WhisperWebTranscriber')
 capture_node = next(n for n in klass.body if isinstance(n, ast.FunctionDef)
@@ -22,9 +29,11 @@ capture_node = next(n for n in klass.body if isinstance(n, ast.FunctionDef)
 split_node = next(n for n in klass.body if isinstance(n, ast.FunctionDef)
                   and n.name == '_find_quiet_split_index')
 namespace = dict(np=np, deque=deque, time=time, re=re,
+                 signal=signal, Fraction=Fraction, lru_cache=lru_cache,
                  analyze_pcm16=analyze_pcm16, adaptive_silence_seconds=adaptive_silence_seconds,
                  logger=logging.getLogger('live-audio-test'))
-exec(compile(ast.Module(body=[join_node, capture_node, split_node], type_ignores=[]),
+exec(compile(ast.Module(body=resample_nodes + [join_node, capture_node, split_node],
+                        type_ignores=[]),
              'buyedektir.py', 'exec'), namespace)
 join = namespace['_join_transcription_segments']
 split = namespace['_find_quiet_split_index']
@@ -53,7 +62,8 @@ def capture_case(prefix, speech, vad_fails=False, reset_at=None, ptt=False):
         _capture_handshake=None, _signal_snapshot=None, _capture_phase='idle',
         audio_queue=queue.Queue(),
         _resolve_capture_device=lambda p, d: (0, {'maxInputChannels':1, 'defaultSampleRate':16000, 'name':'Test'}),
-        _close_active_audio_stream=lambda: None,
+        # Sahiplik eslesirse True: finally'deki dogrudan-kapatma kolu atlanir.
+        _close_active_audio_stream=lambda *a, **k: True,
         _enqueue_audio=lambda data, *args: captured.append(data.copy()))
 
     read_index = 0

@@ -27,8 +27,11 @@ try:
     if os.environ.get('WHISPER_SKIP_DOTENV', '').strip().lower() not in {
             '1', 'true', 'yes', 'on'}:
         load_dotenv()
+        _DOTENV_MISSING = False
+    else:
+        _DOTENV_MISSING = False
 except ImportError:
-    pass  # dotenv yüklü değilse geç
+    _DOTENV_MISSING = True  # .env yuklenemez; logger hazir olunca uyar
 import numpy as np
 from audio_diagnostics import analyze_pcm16, adaptive_silence_seconds
 import pyaudiowpatch as pyaudio
@@ -177,6 +180,9 @@ def setup_logging():
     return logger
 
 logger = setup_logging()
+if _DOTENV_MISSING:
+    logger.warning('python-dotenv kurulu degil; .env dosyasi yuklenemedi. '
+                   'API anahtarlari icin: pip install python-dotenv')
 
 # Paylasimli HTTP oturumu: OpenAI/DeepL cagrilarinda her istekte yeni TCP+TLS
 # el sikismasi yerine baglanti havuzu kullanilir (istek basina ~100-300ms tasarruf).
@@ -282,12 +288,8 @@ def _resample_filter(up, down):
     max_rate = max(up, down)
     return signal.firwin(2 * 10 * max_rate + 1, 1.0 / max_rate, window=('kaiser', 5.0))
 
-def _resample_int16(audio_array, src_rate, dst_rate):
-    """int16 ses dizisini onbellekli FIR filtresiyle dst_rate'e yeniden ornekle."""
-    if int(src_rate) <= 0 or int(dst_rate) <= 0:
-        raise ValueError('Ornekleme hizi pozitif olmali')
-    if int(src_rate) == int(dst_rate) or len(audio_array) == 0:
-        return audio_array.copy()
+def _resample_ratio(src_rate, dst_rate):
+    """up/down oranini hesapla; patolojik orani 2000 paydada yaklastir."""
     gcd = np.gcd(int(dst_rate), int(src_rate))
     up = int(dst_rate) // gcd
     down = int(src_rate) // gcd
@@ -297,9 +299,18 @@ def _resample_int16(audio_array, src_rate, dst_rate):
     if max(up, down) > 2000:
         bounded = Fraction(int(dst_rate), int(src_rate)).limit_denominator(2000)
         up, down = bounded.numerator, bounded.denominator
-        # Yaklasim 1:1 ise Nyquist'te FIR tasarlama; ses zaten hedef saate yakin.
-        if up == down:
-            return audio_array.copy()
+    return up, down
+
+
+def _resample_int16(audio_array, src_rate, dst_rate):
+    """int16 ses dizisini onbellekli FIR filtresiyle dst_rate'e yeniden ornekle."""
+    if int(src_rate) <= 0 or int(dst_rate) <= 0:
+        raise ValueError('Ornekleme hizi pozitif olmali')
+    if int(src_rate) == int(dst_rate) or len(audio_array) == 0:
+        return audio_array.copy()
+    up, down = _resample_ratio(src_rate, dst_rate)
+    if up == down:
+        return audio_array.copy()
     resampled = signal.resample_poly(
         audio_array, up, down, window=_resample_filter(up, down)
     )
@@ -307,6 +318,84 @@ def _resample_int16(audio_array, src_rate, dst_rate):
     # dogrudan cast tasan ornegi SARAR (32768 -> -32768) ve sesli bir 'klik'
     # olusturur (VAD/transkripsiyonu da bozabilir). Once int16 araligina kirp.
     return np.clip(resampled, -32768, 32767).astype(np.int16)
+
+
+class StreamResampler:
+    """Canli ses akisi icin surekli resample.
+
+    Chunk basina bagimsiz _resample_int16 cagrisi her ~30ms sinirda FIR
+    transient'i (sifir-dolgulu kenar) uretir ve parcalari birlestirince
+    periyodik tikirti olusur. Burada islenmemis giris inbuf'ta tutulur; her
+    cagri yalniz `down`'un tam kati kadar giris "taahhut" edip sonunda
+    carry_in orneklik kuyruk birakir — boylece polyphase faz hizasi chunk
+    boyutundan bagimsiz olarak korunur ve cikti kesintisiz birikir
+    (overlap-save).
+
+    carry_in iki kosulu saglar: FIR grup gecikmesini (giris ornegi cinsinden)
+    kaplar ve `down`'un tam katidir; boylece pencere sonundaki kuyruk-ciktisi
+    (tail_out ornek) tam sayiya oturur ve sonraki turda yeniden uretilir.
+    """
+
+    def __init__(self, src_rate, dst_rate):
+        if int(src_rate) <= 0 or int(dst_rate) <= 0:
+            raise ValueError('Ornekleme hizi pozitif olmali')
+        self.src_rate = int(src_rate)
+        self.dst_rate = int(dst_rate)
+        if self.src_rate == self.dst_rate:
+            self.up = self.down = 1
+            self.carry_in = 0
+        else:
+            self.up, self.down = _resample_ratio(src_rate, dst_rate)
+            if self.up == self.down:
+                self.carry_in = 0
+            else:
+                # FIR uzunlugu 2*10*max(up,down)+1 dok; upsample-domain
+                # gecikmesi (L-1)/2 dok -> giris ornegi cinsinden (L-1)/(2*up).
+                delay_in = max(1, -(- (2 * 10 * max(self.up, self.down)) // (2 * self.up)))
+                # Kuyruk delay'i kaplasin VE down'un kati olsun (faz hizasi).
+                self.carry_in = -(-delay_in // self.down) * self.down
+        self.tail_out = self.carry_in * self.up // self.down
+        # Islenip taahhut edilmis son carry_in giris: bir sonraki pencerenin
+        # SOL baglami (sifirla baslar = resample_poly'nin kendi kenar dolgusu).
+        self.hist = np.zeros(self.carry_in, dtype=np.int16)
+        self.inbuf = np.empty(0, dtype=np.int16)
+
+    def reset(self):
+        """Veri kesintisi (okuma hatasi/kayip) sonrasi birikimi temizle."""
+        self.hist = np.zeros(self.carry_in, dtype=np.int16)
+        self.inbuf = np.empty(0, dtype=np.int16)
+
+    def process(self, audio_array):
+        """Bir chunk'i resample et; donen cikti onceki ciktilarla kesintisiz.
+
+        Donus bos olabilir: ilk birikim carry_in + bir faz blogunu doldurana
+        dek cikti verilmez (kuyruk + faz gecikmesi kadar dogal gecikme).
+        """
+        if self.src_rate == self.dst_rate or self.carry_in == 0:
+            return audio_array.copy() if len(audio_array) else audio_array
+        if len(audio_array):
+            self.inbuf = np.concatenate([self.inbuf, audio_array])
+        n = len(self.inbuf)
+        # Faz-hizali ilerleme: yalniz down'un kati kadar giris taahhut edilir;
+        # geride carry_in birakilir ki sonraki resample ayni filtreyi kirik
+        # olmadan surdurebilsin.
+        k = (n - self.carry_in) // self.down * self.down
+        if k <= 0:
+            return np.empty(0, dtype=np.int16)
+        # Pencere = [onceki carry_in'lik gecmis | taahhut k | gelecek carry_in].
+        # Emit edilen bolgenin iki yaninda da gercek ornekler kalir: FIR kenar
+        # dolguyla degil kesintisiz veriyle calisir (overlap-save).
+        resampled = _resample_int16(
+            np.concatenate([self.hist, self.inbuf[:k + self.carry_in]]),
+            self.src_rate, self.dst_rate)
+        committed = self.inbuf[:k]
+        self.inbuf = self.inbuf[k:]
+        self.hist = (committed[-self.carry_in:]
+                     if k >= self.carry_in
+                     else np.concatenate([self.hist, committed])[-self.carry_in:])
+        # Penceredeki carry oneki tail_out cikti uretir: atilir. Geriye kalan,
+        # taahhut edilen k girisin tam ciktisidir (k*up//down ornek).
+        return resampled[self.tail_out:self.tail_out + k * self.up // self.down]
 
 
 def _vad_is_speech(vad, audio, rate):
@@ -2081,7 +2170,7 @@ class DeepLTranslator:
             translation_snapshot=request_snapshot,
         )
         if not result:
-            logger.warning("OpenAI çeviri sonucu boş döndü")
+            logger.warning(f"{provider or 'AI'} çeviri sonucu boş döndü")
             return None
         return result.get("response", "").strip() or None
 
@@ -2242,7 +2331,11 @@ class SpeakerDiarizer:
     
     def identify_speaker(self, audio_data, sample_rate=16000):
         """Konuşmacıyı tanımla"""
-        if not self.enabled or not self.is_ready or not self.pipeline:
+        # Pipeline'i yerel referansa al: release() arada None yaparsa ucan
+        # worker cagri sirasinda AttributeError'a dusmesin; referans tutuldugu
+        # surece nesne calisir, bellek cagri bitince iade edilir.
+        pipeline = self.pipeline
+        if not self.enabled or not self.is_ready or not pipeline:
             return None, None
 
         with self._profile_lock:
@@ -2261,7 +2354,7 @@ class SpeakerDiarizer:
             # Pipeline'a sesi daima tensor olarak ver. Dosya-yolu fallback'i yeni
             # pyannote/torchcodec'te sistem FFmpeg DLL'lerine bagimliydi ve bellek
             # yolu calisabilecek kurulumlarda bile ikinci, bozuk bir hata uretiyordu.
-            diarization = self.pipeline(
+            diarization = pipeline(
                 {"waveform": audio_tensor, "sample_rate": sample_rate}
             )
 
@@ -2325,6 +2418,23 @@ class SpeakerDiarizer:
         # Konusmaci temizligi kimlik bilgisini silmemeli. Yazim kilit disinda.
         self.save_profiles()
         logger.info("✅ Konuşmacı bilgileri sıfırlandı")
+
+    def release(self):
+        """Pyannote pipeline'i serbest birak (VRAM/RAM iadesi, M11).
+
+        Kapatma/reset sirasinda calisan diarization worker'i pipeline'i
+        bitirene dek tutabilir; referansi simdiden birakmak GC'nin isini
+        kolaylastirir. Bir sonraki etkinlestirmede ensure_ready yeniden kurar.
+        """
+        with self._setup_lock:
+            self.pipeline = None
+            self.is_ready = False
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
 
 class MicRecorder:
     MAX_RECORDING_S = 120.0
@@ -2565,6 +2675,12 @@ class WhisperWebTranscriber:
         self.audio_queue = queue.Queue(maxsize=5)
         self.capture_thread = None
         self.transcribe_thread = None
+        self._watchdog_thread = None
+        # Son basarili stream.read zamani (monotonic). Watchdog bunu izler:
+        # surucu/cihaz takilip read hic donmezse oturum "stalled" isaretlenir
+        # (B-BE-011). float atama GIL altinda atomiktir.
+        self._last_capture_read = 0.0
+        self._capture_stalled = False
         self._lifecycle_lock = threading.Lock()  # start/stop yarisini onler
         self._session_monotonic_start = None
         self._stop_in_progress = False
@@ -2686,6 +2802,9 @@ class WhisperWebTranscriber:
         # Bluetooth/surucu takilmalari bu pencerede hata olarak doner; thread
         # yine de takili kalirsa sonraki start is_alive korumasiyla reddeder.
         self.CAPTURE_START_TIMEOUT_S = 15.0
+        # Watchdog: bu sure basarili okuma olmazsa stream.read() takili sayilir
+        # (normalde her ~30ms doner; duraklamada bile discard-read calisir).
+        self.CAPTURE_STALL_S = 8.0
         # MAX_UTTERANCE_S zorunlu bolmesi tam 25. saniyeye denk gelirse kelimeyi
         # ORTADAN kesebilir. Bunun yerine tamponun SON bu kadar saniyelik
         # penceresinde en dusuk enerjili (en sessiz = dogal duraklama) chunk
@@ -3536,9 +3655,17 @@ class WhisperWebTranscriber:
         except queue.Empty:
             pass
 
-    def _close_active_audio_stream(self):
-        """Sahiplenilmis akisi bir kez kapat; canli read'i disaridan kesme."""
+    def _close_active_audio_stream(self, expected_stream=None):
+        """Sahiplenilmis akisi bir kez kapat; canli read'i disaridan kesme.
+
+        expected_stream verilirse yalniz slot hala o stream'i tutuyorsa kapat:
+        watchdog tarafindan "stalled" ilan edilen eski thread'in gec kapanan
+        finally'si, yerine acilmis YENI oturumun akisini yanlislikla kapatamaz.
+        """
         with self._lifecycle_lock:
+            if (expected_stream is not None
+                    and self._active_audio_stream is not expected_stream):
+                return False
             stream = self._active_audio_stream
             p = self._active_audio_p
             self._active_audio_stream = None
@@ -3560,6 +3687,7 @@ class WhisperWebTranscriber:
                 p.terminate()
             except Exception as e:
                 logger.debug(f"PyAudio kapatilamadi: {e}")
+        return True
 
     def start_capture(self, device_id=None, settings=None, whisper_language="tr", speaker_diarization=False, capture_mode='system'):
         """Ses yakalamayı başlat.
@@ -3592,7 +3720,10 @@ class WhisperWebTranscriber:
                     return False, 'Yakalama zaten calisiyor', None
             # Onceki oturum thread'leri (uzun transcribe sirasinda Stop+Start olursa
             # join timeout olmus olabilir) hala canliysa yeni oturum baslatma.
-            if (self.capture_thread and self.capture_thread.is_alive()) or \
+            # _capture_stalled: watchdog surucu-takilmasini zaten olul ilan etti;
+            # bloke kalan read thread'i yeni oturuma sizamaz (session guard'lar).
+            if (self.capture_thread and self.capture_thread.is_alive()
+                    and not self._capture_stalled) or \
                (self.transcribe_thread and self.transcribe_thread.is_alive()):
                 logger.warning("Onceki oturum thread'leri hala calisiyor; kapanmalari bekleniyor")
                 self.is_running = False
@@ -3648,13 +3779,19 @@ class WhisperWebTranscriber:
             self.stats['session_start'] = datetime.now().astimezone().isoformat(timespec='milliseconds')
 
             self._capture_handshake = {'event': threading.Event(), 'error': None}
+            self._capture_stalled = False
+            self._last_capture_read = time.monotonic()
             # Thread'leri başlat (session_id ile; eski thread yeni oturuma sizmaz)
             self.capture_thread = threading.Thread(target=self._capture_audio, args=(device_id, session_id))
             self.transcribe_thread = threading.Thread(target=self._transcribe_audio, args=(session_id,))
+            self._watchdog_thread = threading.Thread(
+                target=self._capture_watchdog, args=(session_id, device_id))
             self.capture_thread.daemon = True
             self.transcribe_thread.daemon = True
+            self._watchdog_thread.daemon = True
             self.capture_thread.start()
             self.transcribe_thread.start()
+            self._watchdog_thread.start()
             handshake = self._capture_handshake
 
         # Kilit serbestken sinirli el sikismasi: cihaz/stream gercekten acilmadan
@@ -3693,8 +3830,9 @@ class WhisperWebTranscriber:
 
         try:
             # Cihaz read'i surerken baska thread'den close/terminate yapma.
-            # Normal okumada worker kendi finally blogunda temizlenir; takilan
-            # surucude yeni start, is_alive korumasiyla reddedilmeye devam eder.
+            # Normal okumada worker kendi finally blogunda temizlenir; watchdog
+            # 'stalled' ilan ettiyse read hala bloke kalabilir — o durumda
+            # akisa buradan da dokunulmaz, yeni oturum sahipligi devralir.
             if capture_thread:
                 capture_thread.join(timeout=2)
             if not capture_thread or not capture_thread.is_alive():
@@ -3708,6 +3846,50 @@ class WhisperWebTranscriber:
             with self._lifecycle_lock:
                 self._stop_in_progress = False
     
+    def _capture_watchdog(self, session_id, device_id):
+        """stream.read() takilmasini izle (B-BE-011).
+
+        USB/Bluetooth cihaz kopunca read hic donmeyebilir; hata firlatmadigi icin
+        consecutive_errors sayaci da calismaz ve thread sonsuza dek bloke kalir.
+        Bu bekleyici CAPTURE_STALL_S boyunca basarili okuma gormezse oturumu
+        "stalled" ilan eder: is_running kapatilir, UI'ya disconnected+error
+        yayilir, sonraki start takili thread'e ragmen ilerler (stream'e baska
+        thread'den dokunma kurali korunur — eski stream'i kendi thread'i kapatir).
+        """
+        while True:
+            time.sleep(0.5)
+            if (session_id != self._session_id or not self.is_running
+                    or self._capture_stalled):
+                return
+            last_read = self._last_capture_read
+            if not last_read or time.monotonic() - last_read < self.CAPTURE_STALL_S:
+                continue
+            with self._lifecycle_lock:
+                if (session_id != self._session_id or not self.is_running
+                        or self._capture_stalled or self._stop_in_progress):
+                    return
+                self._capture_stalled = True
+                self.is_running = False
+                self._capture_phase = 'idle'
+                self._signal_snapshot = {'status': 'disconnected',
+                                         'device_id': device_id}
+            _record_health_error('capture_stalled')
+            logger.error(
+                f"Ses cihazi {self.CAPTURE_STALL_S} saniyedir okuma dondurmedi; "
+                "surucu takildi varsayilarak yakalama oturumu kapatiliyor.")
+            try:
+                socketio.emit('audio_diagnostic', self._signal_snapshot)
+                socketio.emit('error', {
+                    'message': 'Ses cihazı yanıt vermiyor; yakalama durduruldu.'})
+                # UI oturumu kapatsin: gercek capture thread'i hala blokeyse de
+                # bu olay session_id tasidigindan frontend guvenle normalize olur.
+                socketio.emit('capture_stopped', {
+                    'status': 'stopped', 'session_id': session_id,
+                    'reason': 'stalled'})
+            except Exception:
+                logger.debug('Stalled-bildirim emitleri iletilemedi')
+            return
+
     def _partial_snapshot(self, audio_buffer, chunk_seconds, window_seconds=None):
         """Kismi onizleme icin tamponun yalniz son PARTIAL_SNAPSHOT_S saniyesini
         birlestirip dondur. audio_buffer konusma/muzik boyunca (MAX_UTTERANCE_S'e
@@ -3833,6 +4015,10 @@ class WhisperWebTranscriber:
             prev_ptt = False     # bir onceki turda PTT aktif miydi (birakilmayi yakalamak icin)
             # Her okuma read_frames (~30ms) sürer; sessizlik esigi gercek sureden hesaplanir.
             chunk_seconds = (read_frames / float(rate)) if rate else (self.CHUNK_DURATION_MS / 1000.0)
+            # Chunk sinirlarinda FIR transient'i (tikirti) urememesi icin resample
+            # tek seferde degil kuyruk-tasimali StreamResampler ile yapilir
+            # (B-BE-009). Kuyruk giris tarafi surekliligi korur; faz hizali.
+            stream_resampler = StreamResampler(rate, self.RATE)
             # VAD geç tetiklendiğinde ilk hece kesilmesin; yalnız son 180 ms tutulur.
             pre_speech = deque(maxlen=max(1, round(0.18 / chunk_seconds)))
             capture_generation = self._result_generation
@@ -3873,6 +4059,7 @@ class WhisperWebTranscriber:
                         # yutulursa kopuk cihazda bekleme %100 CPU dongusu olur.
                         stream.read(read_frames, exception_on_overflow=False)
                         consecutive_errors = 0
+                        self._last_capture_read = time.monotonic()
                         # Beklet sirasinda normal birikimi temizle ("Simdi Gonder" de
                         # beklemede tetiklenmesin). PTT durumuna dokunma: yukaridaki kosul
                         # PTT'yi zaten haric tuttu, ptt_buffer bu noktada bostur.
@@ -3885,6 +4072,7 @@ class WhisperWebTranscriber:
                         continue
                     data = stream.read(read_frames, exception_on_overflow=False)
                     consecutive_errors = 0  # basarili okuma: hata sayacini sifirla
+                    self._last_capture_read = time.monotonic()
                     if (capture_generation != self._result_generation
                             or session_id != self._session_id):
                         continue  # Okuma sıfırlama sınırını aştı; bu kareyi kullanma.
@@ -3906,9 +4094,13 @@ class WhisperWebTranscriber:
                         audio_array = audio_array.reshape(-1, channels)
                         audio_array = np.mean(audio_array, axis=1).astype(np.int16)
                     
-                    # Resampling (onbellekli FIR filtresiyle; cikti birebir ayni)
+                    # Resampling (onbellekli FIR; kuyruk-tasimali surekli akis)
                     if rate != self.RATE:
-                        audio_array = _resample_int16(audio_array, rate, self.RATE)
+                        audio_array = stream_resampler.process(audio_array)
+                    if len(audio_array) == 0:
+                        # Resampler faz blogunu/kuyrugu biriktiriyor; bu turda
+                        # cikti yok. VAD/volume bos dizide nan uretmesin.
+                        continue
 
                     # Push-to-talk: tus basili oldukca VAD'i atla, tum sesi biriktir;
                     # birakilinca biriken sesi tek segment olarak kuyruga koy.
@@ -4103,6 +4295,9 @@ class WhisperWebTranscriber:
                     if "Input overflowed" in str(e):
                         continue
                     consecutive_errors += 1
+                    # Okuma hatasi veri surekliligini bozdu; resample kuyrugu
+                    # bayat ornekle beslenmesin.
+                    stream_resampler.reset()
                     if consecutive_errors == 1:
                         with self._lifecycle_lock:
                             if session_id == self._session_id:
@@ -4148,9 +4343,12 @@ class WhisperWebTranscriber:
                     'message': 'Ses yakalama sırasında beklenmeyen bir hata oluştu.'
                 })
         finally:
+            slot_closed = False
             if stream_registered:
-                self._close_active_audio_stream()
-            else:
+                slot_closed = self._close_active_audio_stream(stream)
+            if not stream_registered or not slot_closed:
+                # Slot bizde degilse (stalled sonrasi yeni oturum devraldi) kendi
+                # akisimizi kapat: read zaten bitti, bu thread sahipliginde guvenli.
                 try:
                     if stream is not None:
                         stream.stop_stream()
@@ -4158,7 +4356,10 @@ class WhisperWebTranscriber:
                 except Exception as e:
                     logger.debug(f"Failed to close audio stream cleanly: {e}")
                 if p is not None:
-                    p.terminate()
+                    try:
+                        p.terminate()
+                    except Exception as e:
+                        logger.debug(f"PyAudio kapatilamadi: {e}")
             with self._lifecycle_lock:
                 if self._session_id == session_id:
                     self.is_running = False
@@ -4173,11 +4374,14 @@ class WhisperWebTranscriber:
                     # oturumu UI'da yanlışlıkla "Durduruldu" göstermemeli; ayrica
                     # frontend kendi oturum kimligiyle eslestirerek gecikmis bir
                     # olayi yeni oturuma uygulayamaz.
-                    socketio.emit('capture_stopped', {
-                        'status': 'stopped',
-                        'session_id': session_id,
-                        'reason': end_reason
-                    })
+                    try:
+                        socketio.emit('capture_stopped', {
+                            'status': 'stopped',
+                            'session_id': session_id,
+                            'reason': end_reason
+                        })
+                    except Exception:
+                        logger.debug('capture_stopped bildirimi iletilemedi')
 
     def _finish_diarization(
             self, future, transcription_id, session_id, result_generation):
@@ -4867,6 +5071,9 @@ def speaker_settings():
     data = request.json or {}
     enabled = bool(data.get('enabled', False))
     transcriber.diarizer.enabled = enabled
+    if not enabled:
+        # Kapatilirken pipeline bellegi (ozellikle VRAM) geri verilsin.
+        transcriber.diarizer.release()
     # Acildiginda Pyannote'u tembel yukle; yuklenemezse istemciye bildir
     ready = transcriber.diarizer.ensure_ready() if enabled else True
     if enabled and not ready:

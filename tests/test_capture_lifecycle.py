@@ -192,6 +192,9 @@ class _LifecycleState:
                 'audio_test_active': t._audio_test_active,
                 'stop_in_progress': t._stop_in_progress,
                 'capture_phase': t._capture_phase,
+                'capture_stalled': t._capture_stalled,
+                'last_capture_read': t._last_capture_read,
+                'watchdog_thread': t._watchdog_thread,
             }
             t.is_running = False
             t.is_paused = False
@@ -201,6 +204,8 @@ class _LifecycleState:
             t.current_model_name = 'fake'
             t.capture_thread = None
             t.transcribe_thread = None
+            t._watchdog_thread = None
+            t._capture_stalled = False
             t._audio_test_active = False
             t._stop_in_progress = False
         return self
@@ -212,7 +217,8 @@ class _LifecycleState:
             t.stop_capture()
         except Exception:
             pass
-        for th in (t.capture_thread, t.transcribe_thread):
+        for th in (t.capture_thread, t.transcribe_thread,
+                   t._watchdog_thread):
             if th is not None:
                 th.join(timeout=5)
         with t._lifecycle_lock:
@@ -226,6 +232,9 @@ class _LifecycleState:
             t.capture_mode = s['capture_mode']
             t.capture_thread = s['capture_thread']
             t.transcribe_thread = s['transcribe_thread']
+            t._watchdog_thread = s['watchdog_thread']
+            t._capture_stalled = s['capture_stalled']
+            t._last_capture_read = s['last_capture_read']
             t._capture_handshake = s['handshake']  # eski kodda yok; set etmek zararsiz
             t._audio_test_active = s['audio_test_active']
             t._stop_in_progress = s['stop_in_progress']
@@ -630,6 +639,81 @@ class CaptureLifecycleBackendTests(unittest.TestCase):
         for forbidden in ('token', 'api_key', 'secret', 'password', '.env'):
             self.assertNotIn(forbidden, body.lower(),
                              f'healthz gizli alan sizdiriyor: {forbidden}')
+
+    # ── P9a) stream.read() sonsuza bloke -> watchdog oturumu stalled ilan
+    #         eder, is_running kapanir, UI'ya tek capture_stopped gider ────
+    def test_blocked_read_watchdog_marks_stalled(self):
+        never_returns = threading.Event()   # hic set edilmez: read takili kalir
+        stream = _FakeStream(read_gate=never_returns)
+        host = _fake_host(stream=stream)
+        events, emit_patch = _collect_emits()
+        with emit_patch, patch.object(b.pyaudio, 'PyAudio', return_value=host), \
+                patch.object(self.t, 'CAPTURE_STALL_S', 0.4):
+            r = self.client.post('/api/start', json={'device_id': 0})
+            self.assertTrue(r.get_json()['success'])
+            # Read hic donmuyor: hata sayaci calismaz, thread is_alive kalir;
+            # eski kodda oturum burada sonsuza dek 'dinliyor' gorunuyordu.
+            self.assertTrue(_wait_for(
+                lambda: self.t._capture_stalled, timeout=5),
+                "watchdog bloke read'i stalled olarak isaretlemedi")
+            self.assertFalse(self.t.is_running)
+            stopped = _by_name(events, 'capture_stopped')
+            self.assertTrue(stopped, 'stalled oturum icin capture_stopped yok')
+            self.assertEqual(stopped[-1].get('reason'), 'stalled')
+            self.assertTrue(_by_name(events, 'error'),
+                            'stalled durumu kullaniciya hata olarak gitmedi')
+            diag = _by_name(events, 'audio_diagnostic')
+            self.assertTrue(diag and diag[-1].get('status') == 'disconnected',
+                            'audio_diagnostic disconnected yayinlanmadi')
+            # Temizlik: bloke read'i serbest birak ki eski thread cikabilsin.
+            never_returns.set()
+
+    # ── P9b) stalled oturum ardindan yeni start: takili eski thread yeni
+    #         akisi KAPATAMAZ (sahiplik eslestirmesi) ──────────────────────
+    def test_stalled_session_new_start_keeps_new_stream(self):
+        old_gate = threading.Event()  # eski read'i tutan gate
+        old_stream = _FakeStream(read_gate=old_gate)
+        new_stream = _FakeStream()
+        streams = [old_stream, new_stream]
+        host = _fake_host(stream=None)
+
+        def _open(**_kw):
+            return streams.pop(0)
+        host.open = _open
+
+        events, emit_patch = _collect_emits()
+        with emit_patch, patch.object(b.pyaudio, 'PyAudio', return_value=host), \
+                patch.object(self.t, 'CAPTURE_STALL_S', 0.4):
+            r = self.client.post('/api/start', json={'device_id': 0})
+            self.assertTrue(r.get_json()['success'])
+            first_session = r.get_json()['session_id']
+            self.assertTrue(_wait_for(
+                lambda: self.t._capture_stalled, timeout=5))
+            # Eski thread hala bloke (is_alive) ama stalled: yeni start
+            # kabul edilmeli — eski kod burada 'hala kapaniyor' reddediyordu.
+            second = None
+            for _ in range(50):
+                second = self.client.post('/api/start', json={'device_id': 0})
+                if second.get_json().get('success'):
+                    break
+                time.sleep(0.1)
+            self.assertTrue(second and second.get_json()['success'],
+                            f'stalled sonrasi yeni start reddedildi: {second.get_json() if second else None}')
+            self.assertGreater(second.get_json()['session_id'], first_session)
+            # Simdi eski read'i serbest birak: eski thread cikarken finally'si
+            # sahipligi kendisinde olmayan YENI akisa dokunmamali.
+            old_gate.set()
+            self.assertTrue(_wait_for(lambda: old_stream.closed, timeout=5),
+                            'eski thread kendi akisini kapatamadi')
+            self.assertFalse(new_stream.closed,
+                             'eski thread finallysi yeni oturumun akisini kapatti')
+            self.assertTrue(self.t.is_running,
+                            'eski thread cikisi yeni oturumu durdurdu')
+            self.client.post('/api/stop')
+            # Yeni oturum icin de capture_stopped yayimlanmis olmali.
+            stopped = _by_name(events, 'capture_stopped')
+            self.assertIn(second.get_json()['session_id'],
+                          [s.get('session_id') for s in stopped])
 
 
 if __name__ == '__main__':

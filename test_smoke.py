@@ -998,6 +998,53 @@ def test_resample_clip():
           "tasan ornekler 32767'ye kirpilmadi (sarma riski)")
 
 
+# ── 7b. Akis resampler'i: chunk sinirinda FIR transient'i yok ──────────
+def test_stream_resampler_continuity():
+    """B-BE-009: StreamResampler parcalara bolunmus girisi, tek parca
+    _resample_int16 ciktisiyla BIT-BIREBIR uretmeli. Eski davranis chunk
+    basina sifirdan resample edip sinirlarda periyodik tikirti birakiyordu
+    (faz hizasi down kati olmayan oranlarda ayrica uzunluk sapmasi)."""
+    np = buyedektir.np
+    rng = np.random.RandomState(0)
+    for src in (48000, 44100, 22050):
+        dst = 16000
+        chunk = int(src * 0.03)
+        t = np.arange(int(src * 0.3)) / src
+        sig = (np.sin(2 * np.pi * 440 * t) * 12000
+               + rng.randn(len(t)) * 300).astype(np.int16)
+        ref = buyedektir._resample_int16(sig, src, dst)
+        sr = buyedektir.StreamResampler(src, dst)
+        got = np.concatenate([
+            sr.process(sig[i:i + chunk]) for i in range(0, len(sig), chunk)])
+        n = min(len(ref), len(got))
+        check(n > 0, f"{src}: stream resampler hic cikti uretmedi")
+        check(int(np.abs(ref[:n].astype(np.int64)
+                     - got[:n].astype(np.int64)).max()) == 0,
+              f"{src}: stream resampler one-shot ciktidan sapti")
+        # Kuyruk tamponda kalir: kayip en fazla carry girdisinin ciktisi kadar.
+        check(0 <= len(ref) - len(got) <= sr.tail_out,
+              f"{src}: beklenmeyen cikti kaybi {len(ref) - len(got)}")
+
+    # Faz birikimi: carry+down dolmadan cikti verilmez (100 < 441+441).
+    sr = buyedektir.StreamResampler(22050, 16000)
+    first = sr.process(np.ones(100, dtype=np.int16))
+    second = sr.process(np.ones(1323, dtype=np.int16))
+    check(len(first) == 0, "kisa ilk chunk'ta erken cikti uretildi")
+    check(len(second) > 0, "kisa chunk sonrasi resampler cikti uretmedi")
+
+    # Esit oran: kopya, durum tutmaz.
+    sr_eq = buyedektir.StreamResampler(16000, 16000)
+    out_eq = sr_eq.process(np.ones(480, dtype=np.int16))
+    check(len(out_eq) == 480, "esit oran resampler ciktiyi degistirdi")
+    check(len(sr_eq.process(np.zeros(0, dtype=np.int16))) == 0,
+          "bos giris resampler'i bozdu")
+
+    # reset(): hata sonrasi kirik veriyle devam etmesin.
+    sr.reset()
+    check(len(sr.inbuf) == 0 and int(sr.hist.sum()) == 0,
+          "reset() resampler durumunu temizlemedi")
+
+
 # ── 8. Kismi onizleme snapshot kirpmasi (O(n^2) tampon buyumesi onlemi) ──
 def test_partial_snapshot_cap():
     t = buyedektir.transcriber
@@ -1908,7 +1955,8 @@ def main():
                test_transcription_id_survives_clear,
                test_segment_join_and_speech_onset,
                test_clear_capture_generation,
-               test_translation_backlog, test_resample_clip, test_partial_snapshot_cap,
+               test_translation_backlog, test_resample_clip,
+               test_stream_resampler_continuity, test_partial_snapshot_cap,
                test_quiet_split_index,
                test_max_utterance_forced_flush, test_max_ptt_forced_flush,
                test_api_token_and_model_load_lock,
